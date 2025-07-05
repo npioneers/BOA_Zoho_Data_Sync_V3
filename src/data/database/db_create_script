@@ -1,0 +1,305 @@
+-- =============================================================================
+-- Project Bedrock: Canonical Database Schema
+-- Version: 1.0
+-- Description: Creates the normalized relational schema for the Zoho Data Sync
+--              application based on the official API documentation.
+-- =============================================================================
+
+-- This script is idempotent and can be run multiple times. It will drop
+-- existing tables before recreating them to ensure a clean slate.
+-- The order is important due to Foreign Key constraints.
+
+-- =============================================================================
+-- Drop Tables (in reverse order of creation to respect dependencies)
+-- =============================================================================
+DROP TABLE IF EXISTS VendorPaymentApplications;
+DROP TABLE IF EXISTS CustomerPaymentApplications;
+DROP TABLE IF EXISTS CreditNoteLineItems;
+DROP TABLE IF EXISTS BillLineItems;
+DROP TABLE IF EXISTS PurchaseOrderLineItems;
+DROP TABLE IF EXISTS SalesOrderLineItems;
+DROP TABLE IF EXISTS InvoiceLineItems;
+
+DROP TABLE IF EXISTS VendorPayments;
+DROP TABLE IF EXISTS CustomerPayments;
+DROP TABLE IF EXISTS CreditNotes;
+DROP TABLE IF EXISTS Bills;
+DROP TABLE IF EXISTS PurchaseOrders;
+DROP TABLE IF EXISTS SalesOrders;
+DROP TABLE IF EXISTS Invoices;
+DROP TABLE IF EXISTS Items;
+DROP TABLE IF EXISTS Contacts;
+DROP TABLE IF EXISTS Organizations;
+
+-- =============================================================================
+-- Master Data Tables
+-- =============================================================================
+
+-- Table: Organizations
+CREATE TABLE Organizations (
+    OrganizationID TEXT PRIMARY KEY,
+    Name TEXT,
+    ContactName TEXT,
+    Email TEXT,
+    Phone TEXT,
+    IsPrimary INTEGER, -- Using INTEGER for boolean (0/1)
+    CreatedTime TEXT
+);
+
+-- Table: Contacts (can be both Customers and Vendors)
+CREATE TABLE Contacts (
+    ContactID TEXT PRIMARY KEY,
+    ContactName TEXT NOT NULL,
+    CompanyName TEXT,
+    ContactType TEXT, -- e.g., 'customer', 'vendor'
+    Status TEXT,
+    PaymentTerms INTEGER,
+    PaymentTermsLabel TEXT,
+    CurrencyCode TEXT,
+    OutstandingReceivableAmount REAL,
+    OutstandingPayableAmount REAL, -- Added for vendors
+    CreatedTime TEXT,
+    LastModifiedTime TEXT
+);
+
+-- Table: Items
+CREATE TABLE Items (
+    ItemID TEXT PRIMARY KEY,
+    Name TEXT NOT NULL,
+    SKU TEXT,
+    Description TEXT,
+    ItemType TEXT,
+    Rate REAL,
+    PurchaseRate REAL,
+    StockOnHand REAL,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT
+);
+
+
+-- =============================================================================
+-- Transactional Header Tables
+-- =============================================================================
+
+-- Table: SalesOrders
+CREATE TABLE SalesOrders (
+    SalesOrderID TEXT PRIMARY KEY,
+    CustomerID TEXT,
+    CustomerName TEXT,
+    SalesOrderNumber TEXT NOT NULL,
+    ReferenceNumber TEXT,
+    Date TEXT,
+    ShipmentDate TEXT,
+    Status TEXT,
+    Total REAL,
+    Balance REAL,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (CustomerID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: Invoices
+CREATE TABLE Invoices (
+    InvoiceID TEXT PRIMARY KEY,
+    CustomerID TEXT,
+    CustomerName TEXT,
+    InvoiceNumber TEXT NOT NULL,
+    ReferenceNumber TEXT,
+    Date TEXT,
+    DueDate TEXT,
+    Status TEXT,
+    Total REAL,
+    Balance REAL,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (CustomerID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: PurchaseOrders
+CREATE TABLE PurchaseOrders (
+    PurchaseOrderID TEXT PRIMARY KEY,
+    VendorID TEXT,
+    VendorName TEXT,
+    PurchaseOrderNumber TEXT NOT NULL,
+    ReferenceNumber TEXT,
+    Date TEXT,
+    DeliveryDate TEXT,
+    Status TEXT,
+    Total REAL,
+    BilledStatus TEXT,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (VendorID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: Bills
+CREATE TABLE Bills (
+    BillID TEXT PRIMARY KEY,
+    VendorID TEXT,
+    VendorName TEXT,
+    BillNumber TEXT,
+    ReferenceNumber TEXT,
+    Date TEXT,
+    DueDate TEXT,
+    Status TEXT,
+    Total REAL,
+    Balance REAL,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (VendorID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: CreditNotes
+CREATE TABLE CreditNotes (
+    CreditNoteID TEXT PRIMARY KEY,
+    CustomerID TEXT,
+    CustomerName TEXT,
+    CreditNoteNumber TEXT NOT NULL,
+    Date TEXT,
+    Status TEXT,
+    Total REAL,
+    Balance REAL,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (CustomerID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: CustomerPayments
+CREATE TABLE CustomerPayments (
+    PaymentID TEXT PRIMARY KEY,
+    CustomerID TEXT,
+    CustomerName TEXT,
+    PaymentMode TEXT,
+    Date TEXT,
+    Amount REAL,
+    ReferenceNumber TEXT,
+    Description TEXT,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (CustomerID) REFERENCES Contacts (ContactID)
+);
+
+-- Table: VendorPayments
+CREATE TABLE VendorPayments (
+    PaymentID TEXT PRIMARY KEY,
+    VendorID TEXT,
+    VendorName TEXT,
+    PaymentMode TEXT,
+    Date TEXT,
+    Amount REAL,
+    ReferenceNumber TEXT,
+    Description TEXT,
+    CreatedTime TEXT,
+    LastModifiedTime TEXT,
+    FOREIGN KEY (VendorID) REFERENCES Contacts (ContactID)
+);
+
+
+-- =============================================================================
+-- Transactional Line Item Tables (The Children)
+-- =============================================================================
+
+-- Table: SalesOrderLineItems
+CREATE TABLE SalesOrderLineItems (
+    LineItemID TEXT PRIMARY KEY,
+    SalesOrderID TEXT NOT NULL,
+    ItemID TEXT,
+    ItemName TEXT,
+    Description TEXT,
+    Quantity REAL,
+    Rate REAL,
+    Discount REAL,
+    ItemTotal REAL,
+    FOREIGN KEY (SalesOrderID) REFERENCES SalesOrders (SalesOrderID),
+    FOREIGN KEY (ItemID) REFERENCES Items (ItemID)
+);
+
+-- Table: InvoiceLineItems
+CREATE TABLE InvoiceLineItems (
+    LineItemID TEXT PRIMARY KEY,
+    InvoiceID TEXT NOT NULL,
+    ItemID TEXT,
+    ItemName TEXT,
+    Description TEXT,
+    Quantity REAL,
+    Rate REAL,
+    Discount REAL,
+    ItemTotal REAL,
+    FOREIGN KEY (InvoiceID) REFERENCES Invoices (InvoiceID),
+    FOREIGN KEY (ItemID) REFERENCES Items (ItemID)
+);
+
+-- Table: PurchaseOrderLineItems
+CREATE TABLE PurchaseOrderLineItems (
+    LineItemID TEXT PRIMARY KEY,
+    PurchaseOrderID TEXT NOT NULL,
+    ItemID TEXT,
+    ItemName TEXT,
+    Description TEXT,
+    Quantity REAL,
+    Rate REAL,
+    Discount REAL,
+    ItemTotal REAL,
+    FOREIGN KEY (PurchaseOrderID) REFERENCES PurchaseOrders (PurchaseOrderID),
+    FOREIGN KEY (ItemID) REFERENCES Items (ItemID)
+);
+
+-- Table: BillLineItems
+CREATE TABLE BillLineItems (
+    LineItemID TEXT PRIMARY KEY,
+    BillID TEXT NOT NULL,
+    ItemID TEXT,
+    ItemName TEXT,
+    Description TEXT,
+    Quantity REAL,
+    Rate REAL,
+    Discount REAL,
+    ItemTotal REAL,
+    FOREIGN KEY (BillID) REFERENCES Bills (BillID),
+    FOREIGN KEY (ItemID) REFERENCES Items (ItemID)
+);
+
+-- Table: CreditNoteLineItems
+CREATE TABLE CreditNoteLineItems (
+    LineItemID TEXT PRIMARY KEY,
+    CreditNoteID TEXT NOT NULL,
+    ItemID TEXT,
+    ItemName TEXT,
+    Description TEXT,
+    Quantity REAL,
+    Rate REAL,
+    Discount REAL,
+    ItemTotal REAL,
+    FOREIGN KEY (CreditNoteID) REFERENCES CreditNotes (CreditNoteID),
+    FOREIGN KEY (ItemID) REFERENCES Items (ItemID)
+);
+
+
+-- =============================================================================
+-- Association Tables (for Many-to-Many relationships)
+-- =============================================================================
+
+-- Table: CustomerPaymentApplications (links payments to invoices)
+CREATE TABLE CustomerPaymentApplications (
+    ApplicationID TEXT PRIMARY KEY, -- Synthesized Key (e.g., payment_id + invoice_id)
+    PaymentID TEXT NOT NULL,
+    InvoiceID TEXT NOT NULL,
+    AmountApplied REAL,
+    FOREIGN KEY (PaymentID) REFERENCES CustomerPayments (PaymentID),
+    FOREIGN KEY (InvoiceID) REFERENCES Invoices (InvoiceID)
+);
+
+-- Table: VendorPaymentApplications (links payments to bills)
+CREATE TABLE VendorPaymentApplications (
+    ApplicationID TEXT PRIMARY KEY, -- Synthesized Key (e.g., payment_id + bill_id)
+    PaymentID TEXT NOT NULL,
+    BillID TEXT NOT NULL,
+    AmountApplied REAL,
+    FOREIGN KEY (PaymentID) REFERENCES VendorPayments (PaymentID),
+    FOREIGN KEY (BillID) REFERENCES Bills (BillID)
+);
+
+-- =============================================================================
+-- Finalization
+-- =============================================================================
+PRAGMA foreign_keys = ON;

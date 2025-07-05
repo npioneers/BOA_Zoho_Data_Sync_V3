@@ -1,0 +1,52 @@
+# Project Bedrock V2 Configuration File
+# This file configures the dual-source data synchronization pipeline
+
+data_sources:
+  # CSV backup source for bulk loading (Stage 1)
+  # Use 'LATEST' to automatically find the most recent timestamped directory
+  # Or specify exact path like: "data/csv/Nangsel Pioneers_2025-06-22"
+  csv_backup_path: "LATEST"
+  
+  # JSON API source for incremental sync (Stage 2)
+  # Use 'LATEST' to automatically find the most recent timestamped directory
+  # Or specify exact path like: "data/raw_json/2025-07-04_15-27-24"
+  json_api_path: "LATEST"
+  
+  # Target production database
+  target_database: "data/database/production.db"
+
+processing:
+  # Batch size for large datasets
+  batch_size: 1000
+  
+  # Enable transformation validation
+  validate_transformations: true
+  
+  # Create database backups before rebuild
+  create_backups: true
+  
+  # Enable progress reporting
+  show_progress: true
+
+logging:
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "reports/rebuild.log"
+  
+  # Enable console output
+  console: true
+
+# Entity-specific settings
+entities:
+  bills:
+    enabled: true
+    csv_file: "Bill.csv"
+    json_file: "bills.json"
+    
+  # Future entities can be added here
+  # invoices:
+  #   enabled: true
+  #   csv_file: "invoices.csv"
+  #   json_file: "invoices.json"

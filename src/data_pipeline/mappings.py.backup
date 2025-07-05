@@ -1,0 +1,205 @@
+"""
+Data Mapping Configurations for Project Bedrock V2
+
+This module contains all column mapping dictionaries and canonical schemas
+extracted from the validated mapping workbench. These configurations drive
+the transformation logic for both CSV and JSON data sources.
+
+Based on: 1_mapping_workbench.ipynb validation results
+"""
+
+# 🏛️ CANONICAL BILLS SCHEMA - FLATTENED STRUCTURE
+# Based on ZOHO_API_DOCUMENTATION_COMPILED.md - Bills + Line Items Combined
+
+CANONICAL_BILLS_COLUMNS = [
+    # Bill Header Fields (From Bills entity)
+    'BillID',
+    'VendorID', 
+    'VendorName',
+    'BillNumber',
+    'ReferenceNumber',
+    'Date',
+    'DueDate',
+    'DueDays',
+    'Status',
+    'CurrencyCode',
+    'ExchangeRate',
+    'SubTotal',
+    'TaxTotal',
+    'Total',
+    'Balance',
+    'IsInclusiveTax',
+    'Notes',
+    'Terms',
+    'CreatedTime',
+    'LastModifiedTime',
+    
+    # Line Item Fields (From Bill Line Items entity)
+    'LineItemID',
+    'ItemName',
+    'ItemDescription',
+    'Quantity',
+    'Rate',
+    'Amount',
+    'LineItemTaxTotal',
+    'AccountID',
+    'AccountName',
+    'TaxID',
+    'TaxName',
+    'TaxPercentage'
+]
+
+# 📊 CSV BACKUP → CANONICAL COLUMN MAPPING
+# Maps CSV backup column names (PascalCase with spaces) to canonical schema
+CSV_COLUMN_MAPPING = {
+    'Bill ID': 'BillID',
+    'Vendor ID': 'VendorID', 
+    'Vendor Name': 'VendorName',
+    'Bill Number': 'BillNumber',
+    'Reference Number': 'ReferenceNumber',
+    'Bill Date': 'Date',
+    'Due Date': 'DueDate',
+    'Total Amount': 'Total',
+    'Status': 'Status',
+    'Currency Code': 'CurrencyCode',
+    'Created Time': 'CreatedTime',
+    'Last Modified Time': 'LastModifiedTime',
+    'Line Item ID': 'LineItemID',
+    'Item Name': 'ItemName',
+    'Quantity': 'Quantity',
+    'Rate': 'Rate'
+}
+
+# 🌐 JSON API HEADER MAPPING
+# Maps JSON API bill header fields (snake_case) to canonical schema
+JSON_HEADER_MAPPING = {
+    'bill_id': 'BillID',
+    'vendor_id': 'VendorID',
+    'vendor_name': 'VendorName', 
+    'bill_number': 'BillNumber',
+    'reference_number': 'ReferenceNumber',
+    'date': 'Date',
+    'due_date': 'DueDate',
+    'status': 'Status',
+    'currency_code': 'CurrencyCode',
+    'sub_total': 'SubTotal',
+    'tax_total': 'TaxTotal',
+    'total': 'Total',
+    'balance': 'Balance',
+    'created_time': 'CreatedTime',
+    'last_modified_time': 'LastModifiedTime'
+}
+
+# 📦 JSON API LINE ITEM MAPPING
+# Maps JSON API line item fields (snake_case) to canonical schema
+JSON_LINE_ITEM_MAPPING = {
+    'line_item_id': 'LineItemID',
+    'item_name': 'ItemName',
+    'item_description': 'ItemDescription',
+    'quantity': 'Quantity',
+    'rate': 'Rate',
+    'amount': 'Amount'
+}
+
+# 🔧 CANONICAL FIELD DEFAULTS
+# Default values for missing canonical fields during transformation
+CANONICAL_FIELD_DEFAULTS = {
+    'DueDays': '',
+    'ExchangeRate': 1.0,
+    'SubTotal': 0.0,
+    'TaxTotal': 0.0,
+    'Balance': 0.0,
+    'IsInclusiveTax': 0,
+    'Notes': '',
+    'Terms': '',
+    'ItemDescription': '',
+    'LineItemTaxTotal': 0.0,
+    'AccountID': '',
+    'AccountName': '',
+    'TaxID': '',
+    'TaxName': '',
+    'TaxPercentage': 0.0
+}
+
+# 🎯 SCHEMA METADATA
+SCHEMA_INFO = {
+    'total_fields': len(CANONICAL_BILLS_COLUMNS),
+    'bill_header_fields': sum(1 for col in CANONICAL_BILLS_COLUMNS 
+                              if not col.startswith(('LineItem', 'Item', 'Quantity', 'Rate', 'Amount', 'Account', 'Tax'))),
+    'line_item_fields': sum(1 for col in CANONICAL_BILLS_COLUMNS 
+                            if col.startswith(('LineItem', 'Item', 'Quantity', 'Rate', 'Amount', 'Account', 'Tax'))),
+    'naming_convention': 'PascalCase',
+    'design_principle': 'Complete denormalization (Bills + Line Items in one table)',
+    'source_documentation': 'ZOHO_API_DOCUMENTATION_COMPILED.md'
+}
+
+# 🏗️ CANONICAL BILLS DATABASE SCHEMA
+# SQLite schema definition for the canonical Bills table
+CANONICAL_BILLS_TABLE_SCHEMA = {
+    # Bill Header Fields
+    'BillID': 'TEXT PRIMARY KEY',
+    'VendorID': 'TEXT', 
+    'VendorName': 'TEXT',
+    'BillNumber': 'TEXT',
+    'ReferenceNumber': 'TEXT',
+    'Date': 'TEXT',
+    'DueDate': 'TEXT',
+    'DueDays': 'TEXT',
+    'Status': 'TEXT',
+    'CurrencyCode': 'TEXT',
+    'ExchangeRate': 'REAL',
+    'SubTotal': 'REAL',
+    'TaxTotal': 'REAL',
+    'Total': 'REAL',
+    'Balance': 'REAL',
+    'IsInclusiveTax': 'INTEGER',
+    'Notes': 'TEXT',
+    'Terms': 'TEXT',
+    'CreatedTime': 'TEXT',
+    'LastModifiedTime': 'TEXT',
+    
+    # Line Item Fields
+    'LineItemID': 'TEXT',
+    'ItemName': 'TEXT',
+    'ItemDescription': 'TEXT',
+    'Quantity': 'REAL',
+    'Rate': 'REAL',
+    'Amount': 'REAL',
+    'LineItemTaxTotal': 'REAL',
+    'AccountID': 'TEXT',
+    'AccountName': 'TEXT',
+    'TaxID': 'TEXT',
+    'TaxName': 'TEXT',
+    'TaxPercentage': 'REAL'
+}
+
+def get_schema_info():
+    """Return schema metadata information."""
+    return SCHEMA_INFO
+
+def validate_canonical_schema():
+    """Validate that all mappings reference valid canonical columns."""
+    # Check CSV mapping targets
+    csv_targets = set(CSV_COLUMN_MAPPING.values())
+    canonical_set = set(CANONICAL_BILLS_COLUMNS)
+    
+    invalid_csv = csv_targets - canonical_set
+    if invalid_csv:
+        raise ValueError(f"Invalid CSV mapping targets: {invalid_csv}")
+    
+    # Check JSON mapping targets
+    json_targets = set(JSON_HEADER_MAPPING.values()) | set(JSON_LINE_ITEM_MAPPING.values())
+    invalid_json = json_targets - canonical_set
+    if invalid_json:
+        raise ValueError(f"Invalid JSON mapping targets: {invalid_json}")
+    
+    # Check defaults reference valid columns
+    defaults_keys = set(CANONICAL_FIELD_DEFAULTS.keys())
+    invalid_defaults = defaults_keys - canonical_set
+    if invalid_defaults:
+        raise ValueError(f"Invalid default field keys: {invalid_defaults}")
+    
+    return True
+
+# Validate mappings on import
+validate_canonical_schema()

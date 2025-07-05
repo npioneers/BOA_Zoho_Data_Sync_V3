@@ -1,0 +1,39 @@
+[
+  {
+    "bill_id": "2025070401",
+    "vendor_id": "VENDOR_OLD",
+    "vendor_name": "Older Supplier Co",
+    "bill_number": "BILL-2025-OLD",
+    "reference_number": "REF-OLD-123",
+    "date": "2025-07-04",
+    "due_date": "2025-08-04",
+    "status": "paid",
+    "currency_code": "USD",
+    "exchange_rate": 1.0,
+    "sub_total": 1000.00,
+    "tax_total": 100.00,
+    "total": 1100.00,
+    "balance": 0.00,
+    "is_inclusive_tax": false,
+    "notes": "Older JSON test data",
+    "terms": "Net 30",
+    "created_time": "2025-07-04T15:27:24Z",
+    "last_modified_time": "2025-07-04T15:27:24Z",
+    "line_items": [
+      {
+        "line_item_id": "li_old_001",
+        "item_name": "Basic Widget",
+        "item_description": "Standard widget for testing",
+        "quantity": 10,
+        "rate": 100.00,
+        "amount": 1000.00,
+        "tax_total": 100.00,
+        "account_id": "ACC_OLD",
+        "account_name": "Old Inventory",
+        "tax_id": "TAX_001",
+        "tax_name": "VAT",
+        "tax_percentage": 10.0
+      }
+    ]
+  }
+]
