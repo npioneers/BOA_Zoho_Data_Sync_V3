@@ -26,10 +26,11 @@ def test_imports():
         from data_pipeline.transformer import BillsTransformer
         print("✅ transformer.py imported successfully")
         
-        from data_pipeline.mappings.bills_mapping_config import CANONICAL_BILLS_COLUMNS
-        print("✅ bills_mapping_config.py imported successfully")
+        from data_pipeline.mappings import CANONICAL_SCHEMA
+        print("✅ mappings.py imported successfully")
         
-        print(f"📊 Canonical schema: {len(CANONICAL_BILLS_COLUMNS)} fields")
+        bills_schema = CANONICAL_SCHEMA['Bills']['header_columns']
+        print(f"📊 Bills canonical schema: {len(bills_schema)} fields")
         return True
         
     except Exception as e:
