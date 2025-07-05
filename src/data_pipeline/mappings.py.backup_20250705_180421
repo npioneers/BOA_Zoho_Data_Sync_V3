@@ -1025,7 +1025,7 @@ SALES_ORDERS_CSV_MAP = {
     'Reference#': 'Reference#',
     'Region': 'Region',
     'Sales person': 'Sales person',
-    'SalesOrder ID': 'SalesOrderID',
+    'SalesOrder ID': 'SalesOrder ID',
     'SalesOrder Number': 'SalesOrder Number',
     'Shipping Charge': 'Shipping Charge',
     'Shipping Charge Tax %': 'Shipping Charge Tax %',
@@ -1059,7 +1059,7 @@ PURCHASE_ORDERS_CSV_MAP = {
     'Vendor Name': 'VendorName',
     'Date': 'Date',
     'Expected Delivery Date': 'ExpectedDeliveryDate',
-    # Removed conflicting 'Status': 'Status' - use 'Purchase Order Status' below
+    'Status': 'Status',
     'Sub Total': 'SubTotal',
     'Tax Total': 'TaxTotal',
     'Total': 'Total',
@@ -1126,7 +1126,7 @@ PURCHASE_ORDERS_CSV_MAP = {
     'Project ID': 'Project ID',
     'Project Name': 'Project Name',
     'Purchase Order Date': 'Purchase Order Date',
-    'Purchase Order Status': 'Status',  # Fixed: Map to correct DB column
+    'Purchase Order Status': 'Purchase Order Status',
     'QuantityBilled': 'QuantityBilled',
     'QuantityCancelled': 'QuantityCancelled',
     'QuantityOrdered': 'QuantityOrdered',
@@ -1155,12 +1155,12 @@ PURCHASE_ORDERS_CSV_MAP = {
 
 # CreditNotes CSV-to-Canonical Mapping
 CREDIT_NOTES_CSV_MAP = {
-    'CreditNotes ID': 'CreditNoteID',  # Fixed: Use actual CSV column name
+    'Credit Note ID': 'CreditNoteID',
     'Credit Note Number': 'CreditNoteNumber',
     'Customer ID': 'CustomerID',
     'Customer Name': 'CustomerName',
     'Date': 'Date',
-    # Removed conflicting 'Status': 'Status' - use 'Credit Note Status' below
+    'Status': 'Status',
     'Sub Total': 'SubTotal',
     'Tax Total': 'TaxTotal',
     'Total': 'Total',
@@ -1212,7 +1212,8 @@ CREDIT_NOTES_CSV_MAP = {
     'CF.Scheme Settlement Period': 'CF.Scheme Settlement Period',
     'CF.Scheme Type': 'CF.Scheme Type',
     'Credit Note Date': 'Credit Note Date',
-    'Credit Note Status': 'Status',  # Fixed: Map to correct DB column
+    'Credit Note Status': 'Credit Note Status',
+    'CreditNotes ID': 'CreditNotes ID',
     'Discount': 'Discount',
     'Discount Amount': 'Discount Amount',
     'Discount Type': 'Discount Type',

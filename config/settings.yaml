@@ -10,7 +10,8 @@ data_sources:
   # JSON API source for incremental sync (Stage 2)
   # Use 'LATEST' to automatically find the most recent timestamped directory
   # Or specify exact path like: "data/raw_json/2025-07-04_15-27-24"
-  json_api_path: "LATEST"
+  # Currently set to most complete dataset found during investigation
+  json_api_path: "data/raw_json/2025-06-28_19-09-09"
   
   # Target production database
   target_database: "data/database/production.db"
