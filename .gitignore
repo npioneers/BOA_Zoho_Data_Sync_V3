@@ -48,10 +48,40 @@ ENV/
 *.sqlite
 *.sqlite3
 
+# Data folders - exclude all data directories and contents
+data/
+*/data/
+**/data/
+data/**
+*/data/**
+**/data/**
+
 # CSV data files (exclude sensitive data)
-data/csv/
-data/json/
+*.csv
+**/*.csv
+csv/
+*/csv/
+**/csv/
+
+# JSON data files
+*.json
+**/*.json
+json/
+*/json/
+**/json/
+
+# Output folders
 output/
+*/output/
+**/output/
+output/**
+*/output/**
+**/output/**
+
+# Reports folders  
+reports/
+*/reports/
+**/reports/
 
 # Logs
 *.log
