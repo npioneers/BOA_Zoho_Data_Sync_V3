@@ -825,7 +825,14 @@ def get_line_item_columns(entity_name: str) -> List[str]:
         List of line item column names (empty if no line items)
     """
     schema = get_entity_schema(entity_name)
-    return list(schema['line_items_columns'].keys()) if schema else []
+    if not schema:
+        return []
+    
+    # Check if entity actually has line items before accessing line_items_columns
+    if not schema.get('has_line_items', False):
+        return []
+    
+    return list(schema.get('line_items_columns', {}).keys())
 
 def validate_mapping_coverage(entity_name: str, csv_columns: List[str]) -> Dict[str, List[str]]:
     """

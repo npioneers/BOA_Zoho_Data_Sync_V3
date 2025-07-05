@@ -246,6 +246,134 @@ class DatabaseHandler:
         except Exception as e:
             logger.warning(f"Failed to create some indexes: {e}")
     
+    def bulk_load_data_with_duplicates(self, table_name: str, dataframe: pd.DataFrame, 
+                                     primary_key_col: str, duplicate_strategy: str = 'replace') -> Dict[str, Any]:
+        """
+        Bulk load data with proper duplicate handling using INSERT OR REPLACE/IGNORE.
+        
+        Args:
+            table_name: Target table name
+            dataframe: DataFrame to load
+            primary_key_col: Primary key column name for duplicate detection
+            duplicate_strategy: 'replace', 'ignore', or 'fail' (default: 'replace')
+            
+        Returns:
+            Dictionary with load statistics and results
+        """
+        if dataframe.empty:
+            logger.warning(f"Empty dataframe provided for {table_name}")
+            return {
+                'success': True,
+                'records_processed': 0,
+                'records_loaded': 0,
+                'duplicates_handled': 0,
+                'message': 'No data to load'
+            }
+        
+        start_time = time.time()
+        
+        try:
+            conn = self.connect()
+            
+            # Get record count before loading
+            cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+            records_before = cursor.fetchone()[0]
+            
+            # Get table schema to build proper INSERT statement
+            cursor = conn.execute(f"PRAGMA table_info({table_name})")
+            columns_info = cursor.fetchall()
+            table_columns = [col[1] for col in columns_info]  # col[1] is column name
+            
+            # Filter dataframe to only include columns that exist in the table
+            available_columns = [col for col in dataframe.columns if col in table_columns]
+            df_filtered = dataframe[available_columns].copy()
+            
+            if df_filtered.empty:
+                logger.warning(f"No matching columns found for {table_name}")
+                return {
+                    'success': False,
+                    'error': 'No matching columns found',
+                    'records_processed': 0,
+                    'records_loaded': 0
+                }
+            
+            # Build INSERT statement based on duplicate strategy
+            columns_str = ', '.join([f'"{col}"' for col in available_columns])
+            placeholders = ', '.join(['?' for _ in available_columns])
+            
+            if duplicate_strategy == 'replace':
+                insert_sql = f"INSERT OR REPLACE INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+            elif duplicate_strategy == 'ignore':
+                insert_sql = f"INSERT OR IGNORE INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+            else:  # fail
+                insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+            
+            # Convert DataFrame to list of tuples for insertion
+            data_tuples = [tuple(row) for row in df_filtered.values]
+            
+            # Execute batch insertion
+            duplicates_encountered = 0
+            records_processed = len(data_tuples)
+            
+            if duplicate_strategy == 'ignore':
+                # For INSERT OR IGNORE, we need to count actual insertions
+                for batch_start in range(0, len(data_tuples), 1000):  # Process in batches of 1000
+                    batch_end = min(batch_start + 1000, len(data_tuples))
+                    batch_data = data_tuples[batch_start:batch_end]
+                    
+                    before_batch = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    conn.executemany(insert_sql, batch_data)
+                    after_batch = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    
+                    batch_inserted = after_batch - before_batch
+                    batch_duplicates = len(batch_data) - batch_inserted
+                    duplicates_encountered += batch_duplicates
+                    
+                    if batch_duplicates > 0:
+                        logger.debug(f"Batch {batch_start//1000 + 1}: {batch_duplicates} duplicates ignored")
+            else:
+                # For INSERT OR REPLACE, execute all at once
+                conn.executemany(insert_sql, data_tuples)
+            
+            conn.commit()
+            
+            # Get final record count
+            cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+            records_after = cursor.fetchone()[0]
+            records_loaded = records_after - records_before
+            
+            execution_time = time.time() - start_time
+            
+            logger.info(f"[SUCCESS] Loaded {records_loaded} records to {table_name} ({duplicate_strategy} strategy)")
+            if duplicates_encountered > 0:
+                logger.info(f"   Handled {duplicates_encountered} duplicate records")
+            logger.info(f"   Execution time: {execution_time:.2f}s")
+            
+            return {
+                'success': True,
+                'records_processed': records_processed,
+                'records_loaded': records_loaded,
+                'duplicates_handled': duplicates_encountered,
+                'execution_time': execution_time,
+                'table_name': table_name,
+                'strategy': duplicate_strategy,
+                'message': f'Successfully loaded {records_loaded} records with {duplicate_strategy} strategy'
+            }
+                
+        except Exception as e:
+            execution_time = time.time() - start_time
+            error_msg = f"Failed to load data to {table_name}: {str(e)}"
+            logger.error(f"[ERROR] {error_msg}")
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'execution_time': execution_time,
+                'table_name': table_name,
+                'records_processed': len(dataframe) if not dataframe.empty else 0,
+                'records_loaded': 0
+            }
+
     def bulk_load_data(self, table_name: str, dataframe: pd.DataFrame) -> Dict[str, Any]:
         """
         Bulk load data into specified table with progress tracking and validation.

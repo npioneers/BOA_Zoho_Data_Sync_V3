@@ -251,11 +251,14 @@ class RebuildOrchestrator:
                     # Create line items table if applicable
                     if transformer.has_line_items:
                         line_items_table = transformer.line_items_table
-                        line_items_schema = transformer.entity_schema['line_item_columns']
-                        self.db_handler.create_canonical_table(line_items_table, line_items_schema)
-                        schemas_created += 1
-                        
-                        logger.info(f"Created table: {line_items_table}")
+                        # Use the correct key 'line_items_columns' not 'line_item_columns'
+                        line_items_schema = transformer.entity_schema.get('line_items_columns', {})
+                        if line_items_schema:
+                            self.db_handler.create_canonical_table(line_items_table, line_items_schema)
+                            schemas_created += 1
+                            logger.info(f"Created table: {line_items_table}")
+                        else:
+                            logger.warning(f"Entity {entity_name} marked as having line items but no line_items_columns schema found")
                 
                 except Exception as e:
                     error_msg = f"Failed to create schema for {entity_name}: {str(e)}"
@@ -296,30 +299,42 @@ class RebuildOrchestrator:
                 
                 logger.info(f"   Transformed data successfully")
                 
-                # Load data into database
+                # Load data into database with duplicate handling
                 with self.db_handler:
-                    # Load header data
+                    # Load header data with duplicate replacement strategy
                     header_table = transformer.header_table
-                    header_load_stats = self.db_handler.load_data(
-                        header_table, header_df, if_exists='append'
+                    header_load_stats = self.db_handler.bulk_load_data_with_duplicates(
+                        header_table, header_df, transformer.primary_key, 'replace'
                     )
                     
                     header_records = header_load_stats['records_loaded']
                     self.processing_stats['total_output_records'] += header_records
                     
-                    logger.info(f"   Loaded {header_records:,} records to {header_table}")
+                    # Log duplicate handling results
+                    if header_load_stats.get('duplicates_handled', 0) > 0:
+                        duplicates = header_load_stats['duplicates_handled']
+                        logger.info(f"   Loaded {header_records:,} records to {header_table} ({duplicates} duplicates replaced)")
+                    else:
+                        logger.info(f"   Loaded {header_records:,} records to {header_table}")
                     
                     # Load line items data if applicable
                     if line_items_df is not None and len(line_items_df) > 0:
                         line_items_table = transformer.line_items_table
-                        line_items_load_stats = self.db_handler.load_data(
-                            line_items_table, line_items_df, if_exists='append'
+                        # Get line item primary key from schema
+                        line_item_pk = transformer.entity_schema.get('line_item_pk', 'id')
+                        line_items_load_stats = self.db_handler.bulk_load_data_with_duplicates(
+                            line_items_table, line_items_df, line_item_pk, 'replace'
                         )
                         
                         line_items_records = line_items_load_stats['records_loaded']
                         self.processing_stats['total_output_records'] += line_items_records
                         
-                        logger.info(f"   Loaded {line_items_records:,} records to {line_items_table}")
+                        # Log duplicate handling results for line items
+                        if line_items_load_stats.get('duplicates_handled', 0) > 0:
+                            duplicates = line_items_load_stats['duplicates_handled']
+                            logger.info(f"   Loaded {line_items_records:,} records to {line_items_table} ({duplicates} duplicates replaced)")
+                        else:
+                            logger.info(f"   Loaded {line_items_records:,} records to {line_items_table}")
                 
                 self.processing_stats['entities_processed'] += 1
                 logger.info(f"{entity_name} processing completed")
