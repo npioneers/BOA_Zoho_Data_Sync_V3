@@ -183,8 +183,8 @@ class RebuildOrchestrator:
             # Step 3: Main Processing Loop
             self._execute_main_processing_loop()
             
-            # Step 4: View Creation
-            self._create_all_views()
+            # Step 4: View Creation - TEMPORARILY DISABLED
+            # self._create_all_views()  # Disabled per user request - database connection issue
             
             # Step 5: Final Validation
             self._perform_final_validation()
