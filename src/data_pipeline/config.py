@@ -320,24 +320,24 @@ class ConfigurationManager:
         
         # Handle dynamic CSV path resolution
         if csv_path and csv_path.upper() == 'LATEST':
-            logger.info("🔍 Resolving LATEST CSV backup path...")
+            logger.info("Resolving LATEST CSV backup path...")
             resolved_csv_path = _resolve_dynamic_path(csv_path, 'data/csv')
             if resolved_csv_path != 'data/csv':  # Only use if actually resolved
                 csv_path = resolved_csv_path
-                logger.info(f"📁 Using latest CSV backup: {csv_path}")
+                logger.info(f"Using latest CSV backup: {csv_path}")
             else:
-                logger.warning("⚠️  Failed to resolve LATEST CSV path, using fallback")
+                logger.warning("WARNING: Failed to resolve LATEST CSV path, using fallback")
                 csv_path = "data/csv/Nangsel Pioneers_2025-06-22"  # Specific fallback
         
         # Handle dynamic JSON path resolution
         if json_path and json_path.upper() == 'LATEST':
-            logger.info("🔍 Resolving LATEST JSON API path...")
+            logger.info("Resolving LATEST JSON API path...")
             resolved_json_path = _resolve_dynamic_path(json_path, 'data/raw_json')
             if resolved_json_path != 'data/raw_json':  # Only use if actually resolved
                 json_path = resolved_json_path
-                logger.info(f"📁 Using latest JSON data: {json_path}")
+                logger.info(f"Using latest JSON data: {json_path}")
             else:
-                logger.warning("⚠️  Failed to resolve LATEST JSON path, using fallback")
+                logger.warning("WARNING: Failed to resolve LATEST JSON path, using fallback")
                 json_path = "data/json"  # Fallback to default
         
         return {
@@ -386,7 +386,7 @@ class ConfigurationManager:
         if paths['json_api_path'] and not Path(paths['json_api_path']).exists():
             logger.warning(f"JSON API path does not exist: {paths['json_api_path']}")
         
-        logger.info("✅ Configuration validation completed")
+        logger.info("Configuration validation completed")
         return True
     
     def _resolve_latest_json_path(self) -> Optional[str]:
@@ -431,7 +431,7 @@ class ConfigurationManager:
             timestamp_dirs.sort(key=lambda x: x[0], reverse=True)
             latest_dir = timestamp_dirs[0][1]
             
-            logger.info(f"✅ LATEST JSON path resolved to: {latest_dir}")
+            logger.info(f"LATEST JSON path resolved to: {latest_dir}")
             return str(latest_dir)
             
         except Exception as e:

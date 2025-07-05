@@ -21,7 +21,8 @@ Architecture Principles:
 # Core configuration and database components
 from .config import ConfigurationManager, get_config_manager, reload_config
 from .database import DatabaseHandler
-from .transformer import BillsTransformer
+from .transformer import BillsTransformer, UniversalTransformer, create_transformer
+from .orchestrator import RebuildOrchestrator, run_full_rebuild
 
 # Modular pipeline components
 from .base_builder import BaseBuilder, build_base_from_csv
@@ -43,7 +44,12 @@ __all__ = [
     # Core components
     'DatabaseHandler',
     'BillsTransformer',
-    'CANONICAL_BILLS_COLUMNS',
+    'UniversalTransformer',
+    'create_transformer',
+    'RebuildOrchestrator',
+    'run_full_rebuild',
+    'CANONICAL_SCHEMA',
+    'get_entity_schema',
     
     # Modular pipeline
     'BaseBuilder',

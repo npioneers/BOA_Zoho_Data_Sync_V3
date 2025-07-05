@@ -60,6 +60,11 @@ class DatabaseHandler:
         
         logger.info(f"DatabaseHandler initialized for: {self.database_path}")
     
+    @property
+    def db_path(self) -> str:
+        """Return the database path as string for compatibility."""
+        return str(self.database_path)
+    
     def _ensure_database_directory(self) -> None:
         """Ensure the database directory exists."""
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,7 +90,7 @@ class DatabaseHandler:
                 self.connection.execute("PRAGMA cache_size=10000")
                 self.connection.execute("PRAGMA temp_store=MEMORY")
                 
-                logger.info(f"✅ Connected to database: {self.database_path}")
+                logger.info(f"Connected to database: {self.database_path}")
                 
             except Exception as e:
                 logger.error(f"Failed to connect to database: {e}")
@@ -366,7 +371,7 @@ class DatabaseHandler:
             conn.execute(create_sql)
             conn.commit()
             
-            logger.info(f"✅ Created table '{table_name}' with {len(canonical_columns)} columns")
+            logger.info(f"[SUCCESS] Created table '{table_name}' with {len(canonical_columns)} columns")
             
             # Create helpful indexes
             self._create_table_indexes(table_name, canonical_columns)
@@ -481,7 +486,7 @@ class DatabaseHandler:
             cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
             final_count = cursor.fetchone()[0]
             
-            logger.info(f"✅ Successfully loaded {len(dataframe)} records to {table_name}")
+            logger.info(f"[SUCCESS] Successfully loaded {len(dataframe)} records to {table_name}")
             logger.info(f"   Total records in table: {final_count}")
             logger.info(f"   Execution time: {execution_time:.2f} seconds")
             
@@ -750,6 +755,159 @@ class DatabaseHandler:
         except Exception as e:
             logger.error(f"Query execution failed: {e}")
             raise
+    
+    def backup_and_clear_database(self) -> Dict[str, Any]:
+        """
+        Create a backup of the existing database and clear it for clean rebuild.
+        
+        Returns:
+            Dictionary with backup information
+        """
+        import shutil
+        import time as time_module
+        
+        backup_info = {
+            'backup_created': False,
+            'backup_path': None,
+            'database_cleared': False,
+            'timestamp': time.strftime('%Y-%m-%d_%H-%M-%S')
+        }
+        
+    def backup_and_clear_database(self) -> Dict[str, Any]:
+        """
+        Create a backup of the existing database and clear it for clean rebuild.
+        
+        Returns:
+            Dictionary with backup information
+        """
+        import shutil
+        import time as time_module
+        import gc
+        import os
+        
+        backup_info = {
+            'backup_created': False,
+            'backup_path': None,
+            'database_cleared': False,
+            'timestamp': time.strftime('%Y-%m-%d_%H-%M-%S')
+        }
+        
+    def backup_and_clear_database(self) -> Dict[str, Any]:
+        """
+        Create a backup of the existing database and clear it for clean rebuild.
+        
+        Instead of deleting the file (which can cause locking issues on Windows),
+        we'll clear the database content by dropping all tables.
+        
+        Returns:
+            Dictionary with backup information
+        """
+        import shutil
+        import time as time_module
+        
+        backup_info = {
+            'backup_created': False,
+            'backup_path': None,
+            'database_cleared': False,
+            'timestamp': time.strftime('%Y-%m-%d_%H-%M-%S')
+        }
+        
+        try:
+            # Create backup directory if it doesn't exist
+            backup_dir = self.database_path.parent / 'backups'
+            backup_dir.mkdir(exist_ok=True)
+            
+            # Create backup if database exists
+            if self.database_path.exists():
+                backup_filename = f"{self.database_path.stem}_backup_{backup_info['timestamp']}.db"
+                backup_path = backup_dir / backup_filename
+                
+                # Try to copy the database for backup
+                try:
+                    shutil.copy2(self.database_path, backup_path)
+                    backup_info['backup_created'] = True
+                    backup_info['backup_path'] = str(backup_path)
+                    logger.info(f"Database backup created: {backup_path}")
+                except Exception as backup_error:
+                    logger.warning(f"Could not create backup copy: {backup_error}")
+                
+                # Clear database contents by dropping all tables instead of deleting file
+                self._clear_database_contents()
+                backup_info['database_cleared'] = True
+                logger.info("Database contents cleared (all tables dropped)")
+            
+            else:
+                # Database doesn't exist, which is fine
+                backup_info['database_cleared'] = True
+                logger.info("Database file doesn't exist - no need to clear")
+            
+            return backup_info
+        
+        except Exception as e:
+            logger.error(f"ERROR: Backup and clear failed: {str(e)}")
+            backup_info['error'] = str(e)
+            raise
+    
+    def _clear_database_contents(self) -> None:
+        """Clear database by dropping all tables instead of deleting the file."""
+        conn = self.connect()
+        
+        try:
+            # Get list of all tables
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            tables = [row[0] for row in cursor.fetchall()]
+            
+            # Drop all tables
+            for table in tables:
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+                logger.debug(f"Dropped table: {table}")
+            
+            # Get list of all views
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='view'")
+            views = [row[0] for row in cursor.fetchall()]
+            
+            # Drop all views
+            for view in views:
+                conn.execute(f"DROP VIEW IF EXISTS {view}")
+                logger.debug(f"Dropped view: {view}")
+            
+            # Vacuum to reclaim space
+            conn.execute("VACUUM")
+            conn.commit()
+            
+            logger.info(f"Cleared database: dropped {len(tables)} tables and {len(views)} views")
+            
+        except Exception as e:
+            logger.error(f"Failed to clear database contents: {e}")
+            raise
+        finally:
+            # Keep connection open since we'll be using it next
+            pass
+    
+    def execute_write_query(self, query: str, parameters: Optional[List[Any]] = None) -> None:
+        """
+        Execute a write query (INSERT, UPDATE, DELETE, CREATE, etc.).
+        
+        Args:
+            query: SQL query to execute
+            parameters: Optional parameters for the query
+        """
+        conn = self.connect()
+        
+        try:
+            if parameters:
+                conn.execute(query, parameters)
+            else:
+                conn.execute(query)
+            conn.commit()
+            logger.debug(f"Write query executed successfully")
+            
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Write query failed: {str(e)}")
+            raise
+        finally:
+            conn.close()
     
     def __enter__(self):
         """Context manager entry."""

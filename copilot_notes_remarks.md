@@ -1,5 +1,28 @@
 # REFACTORING PLAN: Database Rebuilder Workbench → Production Package
 
+## CURRENT ISSUES (2025-01-05 15:43)
+
+### Issue 1: Unicode Logging Error
+- **Problem**: Emoji characters in log messages cause `UnicodeEncodeError` on Windows console
+- **Root Cause**: Windows Command Prompt uses cp1252 encoding which can't handle Unicode emojis
+- **Solution**: Replace all emoji characters with ASCII equivalents in log messages
+
+### Issue 2: AttributeError - db_path Missing
+- **Problem**: `orchestrator.py` line 82 tries to access `self.db_handler.db_path`
+- **Root Cause**: `DatabaseHandler` class doesn't expose a `db_path` attribute
+- **Solution**: Either add `db_path` property to DatabaseHandler or use the database path from orchestrator's constructor
+
+## Fix Plan
+1. Remove all emojis from logging messages across all files
+2. Add `db_path` property to DatabaseHandler class
+3. Test the orchestrator run again
+
+## Files to Fix
+- `run_rebuild.py` - Remove emojis from log messages
+- `src/data_pipeline/orchestrator.py` - Remove emojis, fix db_path reference
+- `src/data_pipeline/config.py` - Remove emojis from log messages
+- `src/data_pipeline/database.py` - Add db_path property
+
 ## CURRENT SITUATION ANALYSIS
 - **Existing Structure**: Zoho_Data_Sync/src/data_pipeline/ already has some files
 - **Mappings**: bills_mapping_config.py is complete and validated

@@ -127,9 +127,9 @@ class BillsTransformer:
             # Step 5: Validate the transformation
             self._validate_normalized_transformation(header_df, line_items_df)
             
-            logger.info(f"✅ Successfully un-flattened CSV data:")
-            logger.info(f"  📄 Headers: {len(header_df)} unique bills")
-            logger.info(f"  📦 Line Items: {len(line_items_df)} items")
+            logger.info(f"[SUCCESS] Successfully un-flattened CSV data:")
+            logger.info(f"  [HEADERS] Headers: {len(header_df)} unique bills")
+            logger.info(f"  [LINE_ITEMS] Line Items: {len(line_items_df)} items")
             
             return header_df, line_items_df
             
@@ -288,9 +288,9 @@ class BillsTransformer:
             # Validate the transformation
             self._validate_normalized_transformation(header_df, line_items_df)
             
-            logger.info(f"✅ Successfully transformed JSON data:")
-            logger.info(f"  📄 Headers: {len(header_df)} bills")
-            logger.info(f"  📦 Line Items: {len(line_items_df)} items")
+            logger.info(f"[SUCCESS] Successfully transformed JSON data:")
+            logger.info(f"  [HEADERS] Headers: {len(header_df)} bills")
+            logger.info(f"  [LINE_ITEMS] Line Items: {len(line_items_df)} items")
             
             return header_df, line_items_df
             
@@ -590,7 +590,7 @@ class UniversalTransformer:
             raise ValueError(f"No CSV mapping available for entity: {self.entity_name}")
         
         try:
-            logger.info(f"🔄 Starting CSV transformation for entity: {self.entity_name}")
+            logger.info(f"[TRANSFORM] Starting CSV transformation for entity: {self.entity_name}")
             logger.info(f"  Input records: {len(df)}")
             logger.info(f"  Input columns: {len(df.columns)}")
             
@@ -616,10 +616,10 @@ class UniversalTransformer:
             # Step 5: Validate the transformation
             self._validate_transformation(header_df, line_items_df)
             
-            logger.info(f"✅ Successfully transformed CSV data for {self.entity_name}:")
-            logger.info(f"  📄 Headers: {len(header_df)} records")
+            logger.info(f"[SUCCESS] Successfully transformed CSV data for {self.entity_name}:")
+            logger.info(f"  [HEADERS] Headers: {len(header_df)} records")
             if line_items_df is not None:
-                logger.info(f"  📦 Line Items: {len(line_items_df)} records")
+                logger.info(f"  [LINE_ITEMS] Line Items: {len(line_items_df)} records")
             
             return header_df, line_items_df
             

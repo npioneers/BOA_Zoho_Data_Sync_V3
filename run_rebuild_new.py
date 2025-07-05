@@ -77,13 +77,13 @@ def main():
     # Determine rebuild mode
     clean_rebuild = not args.append
     
-    logger.info("PROJECT BEDROCK V3 - Database Rebuild Process")
+    logger.info("🚀 Project Bedrock V3 - Database Rebuild Process")
     logger.info("=" * 60)
-    logger.info(f"Configuration:")
-    logger.info(f"   Mode: {'Clean Rebuild' if clean_rebuild else 'Append Mode'}")
+    logger.info(f"📋 Configuration:")
+    logger.info(f"   🔄 Mode: {'Clean Rebuild' if clean_rebuild else 'Append Mode'}")
     if args.database:
-        logger.info(f"   Database: {args.database}")
-    logger.info(f"   Log Level: {'DEBUG' if args.verbose else 'INFO'}")
+        logger.info(f"   🗄️ Database: {args.database}")
+    logger.info(f"   📝 Log Level: {'DEBUG' if args.verbose else 'INFO'}")
     logger.info("")
     
     try:
@@ -96,42 +96,42 @@ def main():
         # Display final summary
         summary = orchestrator.get_processing_summary()
         
-        logger.info("[SUMMARY] FINAL PROCESSING SUMMARY")
+        logger.info("📊 FINAL PROCESSING SUMMARY")
         logger.info("=" * 60)
-        logger.info(f"[TARGET] Success: {'[YES]' if summary['success'] else '[NO]'}")
-        logger.info(f"[PROGRESS] Entities Processed: {summary['entities_processed']}/{summary['entities_in_manifest']}")
-        logger.info(f"[INPUT] Total Input Records: {summary['total_input_records']:,}")
-        logger.info(f"[OUTPUT] Total Output Records: {summary['total_output_records']:,}")
-        logger.info(f"[TIME] Processing Duration: {summary['duration_seconds']:.2f} seconds")
-        logger.info(f"[RATE] Processing Rate: {summary['records_per_second']:.0f} records/second")
+        logger.info(f"🎯 Success: {'✅ YES' if summary['success'] else '❌ NO'}")
+        logger.info(f"📈 Entities Processed: {summary['entities_processed']}/{summary['entities_in_manifest']}")
+        logger.info(f"📥 Total Input Records: {summary['total_input_records']:,}")
+        logger.info(f"📤 Total Output Records: {summary['total_output_records']:,}")
+        logger.info(f"⏱️ Processing Duration: {summary['duration_seconds']:.2f} seconds")
+        logger.info(f"🚀 Processing Rate: {summary['records_per_second']:.0f} records/second")
         
         if summary['processing_errors']:
-            logger.warning(f"[WARNING] Processing Errors ({len(summary['processing_errors'])}):")
+            logger.warning(f"⚠️ Processing Errors ({len(summary['processing_errors'])}):")
             for error in summary['processing_errors']:
-                logger.warning(f"   [ERROR] {error}")
+                logger.warning(f"   💥 {error}")
         
         # Display validation results
         if summary['validation_results']:
-            logger.info(f"\n[VALIDATION] Database Validation Results:")
+            logger.info(f"\n🔍 Database Validation Results:")
             for entity, results in summary['validation_results'].items():
                 header_count = results['header_records']
                 line_items_count = results.get('line_items_records', 0)
                 if line_items_count > 0:
-                    logger.info(f"   SUCCESS {entity}: {header_count:,} headers, {line_items_count:,} line items")
+                    logger.info(f"   ✅ {entity}: {header_count:,} headers, {line_items_count:,} line items")
                 else:
-                    logger.info(f"   SUCCESS {entity}: {header_count:,} records")
+                    logger.info(f"   ✅ {entity}: {header_count:,} records")
         
         # Final result
         if summary['success']:
-            logger.info("\nDATABASE REBUILD COMPLETED SUCCESSFULLY!")
+            logger.info("\n🎉 DATABASE REBUILD COMPLETED SUCCESSFULLY! 🎉")
             return 0
         else:
-            logger.error("\nDATABASE REBUILD COMPLETED WITH ERRORS")
+            logger.error("\n❌ DATABASE REBUILD COMPLETED WITH ERRORS")
             return 1
             
     except Exception as e:
-        logger.error(f"FATAL ERROR: Database rebuild failed")
-        logger.error(f"Error Details: {str(e)}")
+        logger.error(f"❌ FATAL ERROR: Database rebuild failed")
+        logger.error(f"💥 Error Details: {str(e)}")
         
         # Log full traceback for debugging
         import traceback
