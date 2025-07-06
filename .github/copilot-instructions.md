@@ -86,3 +86,7 @@
 - **Version Control:** Keep commits small and focused. Write clear commit messages.
 - **Cleanliness:** Maintain a clean working directory; remove unused code and files before considering work complete.
 - **Communication:** Proactively communicate blockers and uncertainties.
+
+## COLLABORATION WITH USER
+- **Developlent cockpit:** Use jupyer notebook to track and manage development flow. SEE copilot-notebook-instructions.md for further instructions
+- **Copilot Roles:** See copilot-project-role.md for your roles
