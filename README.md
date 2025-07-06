@@ -1,203 +1,275 @@
-# Project Bedrock V2 - Production Implementation
+# Zoho Data Sync - Complete ETL Pipeline
 
 ## 🎯 Overview
 
-Project Bedrock V2 is a robust, configuration-driven data synchronization pipeline that creates a canonical database from dual sources:
-
-1. **Stage 1 - Bulk Load**: CSV backup files → Canonical Schema
-2. **Stage 2 - Incremental Sync**: JSON API files → Canonical Schema
-
-## 🏗️ Architecture
-
-### Validated Foundation
-This implementation is based on comprehensive validation in `Zoho_Data_Sync/notebooks/1_mapping_workbench.ipynb`, which proved that both CSV and JSON sources can be successfully mapped to an identical canonical schema.
-
-### Key Components
-
-```
-src/data_pipeline/
-├── mappings/
-│   ├── __init__.py
-│   └── bills_mapping_config.py    # Mapping configurations for Bills entity
-├── transformer.py                 # BillsTransformer class with validation
-└── __init__.py
-
-run_rebuild.py                     # Main orchestrator script
-config.yaml                        # Configuration file
-requirements.txt                   # Updated dependencies
-```
+A comprehensive data synchronization system that provides both **JSON-to-Database sync** and **API sync with verification**. The system includes modular pipeline components, real-time verification, and user-friendly interfaces for production operations.
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### Entry Points
+
+**JSON-to-Database Sync:**
 ```bash
-pip install -r requirements.txt
+python main_json2db.py sync     # Full sync
+python main_json2db.py status   # Check status
 ```
 
-### 2. Configure Data Sources
-Edit `config.yaml` to point to your data sources:
-
-```yaml
-data_sources:
-  csv_backup_path: "path/to/your/csv/backup"
-  json_api_path: "path/to/your/json/files"
-  target_database: "output/database/canonical.db"
-```
-
-### 3. Execute Full Rebuild
+**API Sync with Verification:**
 ```bash
-python run_rebuild.py --full-rebuild
+python main_api_sync.py sync                    # Sync all modules
+python main_api_sync.py sync --since 2025-05-01 # Sync since date
+python main_api_sync.py verify --full           # Full verification
+python main_api_sync.py verify --quick          # Quick verification
 ```
 
-## 📋 Usage Examples
+### Setup
 
-### Full Dual-Source Rebuild
+1. **Configure API sync** (copy `src/api_sync/.env.example` to `src/api_sync/.env`):
+   ```
+   GCP_PROJECT_ID=your-project-id
+   ZOHO_CLIENT_ID=your-client-id
+   ZOHO_CLIENT_SECRET=your-client-secret
+   ZOHO_REFRESH_TOKEN=your-refresh-token
+   ZOHO_ORGANIZATION_ID=your-org-id
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up Google Cloud authentication:**
+   ```bash
+   set GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
+   ```
+
+## 🏗️ System Architecture
+
+### Core Components
+
+**JSON Sync Pipeline:**
+```
+src/json_sync/           # JSON-to-database sync
+├── orchestrator/
+│   └── cli.py          # Command interface
+├── transformers/        # Data transformation
+└── database/           # Database operations
+```
+
+**API Sync Pipeline:**
+```
+src/api_sync/           # API sync with verification
+├── cli.py              # Command interface  
+├── core/               # API communication
+│   ├── auth.py         # OAuth2 authentication
+│   ├── client.py       # API client with pagination
+│   └── secrets.py      # GCP Secret Manager
+├── processing/         # Data processing
+│   └── raw_data_handler.py
+└── verification/       # Multi-mode verification
+    ├── api_local_verifier.py      # API vs Local comparison
+    └── simultaneous_verifier.py   # Real-time verification
+```
+
+**Entry Points:**
+- `main_json2db.py` - JSON-to-database operations
+- `main_api_sync.py` - High-level API sync wrapper
+- Direct CLI access via `python -m src.api_sync.cli`
+
+## 📊 Verification System
+
+### Full Verification
+- Makes fresh API calls for current counts
+- Compares against all local JSON data
+- Comprehensive line item analysis
+- **Latest Results**: 10/10 modules perfect match (19,579 total line items)
+
+### Quick Verification  
+- Uses recent sync session data
+- No API calls required
+- Fast execution
+
+### Simultaneous Verification
+- Real-time tracking during sync operations
+- Records progress as API fetches run
+- Creates session files for later quick verification
+
+## 🎯 Supported Modules
+
+**Standard Modules:**
+- `contacts` (Customers/vendors) - 253 records
+- `items` (Products/services) - 928 records  
+- `customerpayments` - 1,154 records
+- `vendorpayments` - 442 records
+- `organizations` - 3 records
+
+**Document Modules with Line Items:**
+- `invoices` (Sales invoices) - 1,836 headers + 6,897 line items
+- `bills` (Vendor bills) - 421 headers + 3,216 line items
+- `salesorders` - 949 headers + 5,728 line items
+- `purchaseorders` - 57 headers + 2,982 line items
+- `creditnotes` - 567 headers + 756 line items
+
+## � Usage Examples
+
+### Complete API Sync Workflow
 ```bash
-python run_rebuild.py --full-rebuild
+# Sync all modules since May 1st with verification
+python main_api_sync.py sync --since 2025-05-01
+
+# Quick verification using session data
+python main_api_sync.py verify --quick
+
+# Full verification with fresh API calls
+python main_api_sync.py verify --full
 ```
 
-### Using Custom Configuration
+### Targeted Operations
 ```bash
-python run_rebuild.py --full-rebuild --config my_config.yaml
+# Sync specific modules only
+python main_api_sync.py sync --modules invoices,bills,contacts
+
+# Sync with extended timeout for large datasets
+python main_api_sync.py sync --timeout 1800
+
+# JSON-to-database sync
+python main_json2db.py sync
+
+# Check JSON sync status
+python main_json2db.py status
 ```
 
-### CSV Bulk Load Only
+### Direct CLI Access (Advanced)
 ```bash
-python run_rebuild.py --csv-only
+# Fetch specific module with date filter
+python -m src.api_sync.cli fetch invoices --since 2025-01-01
+
+# Run verification
+python -m src.api_sync.cli verify
+
+# JSON sync via direct CLI
+python -m src.json_sync sync
 ```
 
-### JSON Incremental Sync Only
-```bash
-python run_rebuild.py --json-only
+## � Data Structure
+
+### Local JSON Storage
+```
+data/
+  raw_json/
+    YYYY-MM-DD_HH-MM-SS/        # Timestamp of each sync run
+      invoices.json              # Document headers
+      invoices_line_items.json   # Line items (for document modules)
+      bills.json
+      bills_line_items.json
+      contacts.json              # Standard modules
+      items.json
+      sync_verification_session.json  # Session tracking data
 ```
 
-### Validation Only (No Processing)
-```bash
-python run_rebuild.py --validate-only
+### Database Storage
 ```
-
-## 🏛️ Canonical Schema
-
-The Bills entity uses a **flattened schema** combining Bills headers with Line Items:
-
-### Schema Fields (31 total)
-- **Bill Headers (20 fields)**: BillID, VendorID, VendorName, BillNumber, etc.
-- **Line Items (11 fields)**: LineItemID, ItemName, Quantity, Rate, Amount, etc.
-
-### Design Principles
-- ✅ **PascalCase naming** for consistency
-- ✅ **Complete denormalization** (Bills + Line Items in one table)
-- ✅ **One row per line item** with bill header repeated
-- ✅ **Based on Zoho API documentation** structure
-
-## 🔄 Transformation Logic
-
-### CSV Backup → Canonical
-- **Input**: PascalCase with spaces (`"Bill ID"`, `"Vendor Name"`)
-- **Process**: Direct column mapping + calculated fields
-- **Output**: 31-column canonical structure
-
-### JSON API → Canonical  
-- **Input**: snake_case with nested line_items (`bill_id`, `vendor_name`)
-- **Process**: Flattening + column mapping (creates separate row per line item)
-- **Output**: 31-column canonical structure (identical to CSV output)
-
+data/
+  database/
+    production.db               # SQLite database with canonical schema
 ## 🛠️ Configuration
 
-### Main Configuration (`config.yaml`)
+### API Sync Configuration (`src/api_sync/.env`)
+```bash
+# Copy from .env.example and configure:
+GCP_PROJECT_ID=your-project-id
+ZOHO_CLIENT_ID=your-client-id
+ZOHO_CLIENT_SECRET=your-client-secret
+ZOHO_REFRESH_TOKEN=your-refresh-token
+ZOHO_ORGANIZATION_ID=your-org-id
+```
+
+### System Configuration (`config/settings.yaml`)
 ```yaml
 data_sources:
-  csv_backup_path: "data/backup_dump/Nangsel Pioneers_2025-06-22"
-  json_api_path: "output/raw_json"
-  target_database: "output/database/canonical.db"
+  json_api_path: "data/raw_json"
+  target_database: "data/database/production.db"
 
 processing:
   batch_size: 1000
   validate_transformations: true
-  create_backups: true
   show_progress: true
 
 logging:
   level: "INFO"
-  file: "logs/rebuild.log"
   console: true
 ```
 
-### Mapping Configuration (`src/data_pipeline/mappings/bills_mapping_config.py`)
-- `CANONICAL_BILLS_COLUMNS`: Target schema definition
-- `CSV_COLUMN_MAPPING`: CSV → Canonical mappings
-- `JSON_HEADER_MAPPING`: JSON headers → Canonical mappings
-- `JSON_LINE_ITEM_MAPPING`: JSON line items → Canonical mappings
-- `CANONICAL_FIELD_DEFAULTS`: Default values for missing fields
+## 🧪 Testing & Validation
 
-## 📊 Database Structure
-
-### Canonical Bills Table
-```sql
-CREATE TABLE bills_canonical (
-    "BillID" TEXT PRIMARY KEY,
-    "VendorID" TEXT,
-    "VendorName" TEXT,
-    -- ... (31 total columns)
-    "TaxPercentage" REAL
-);
-```
-
-## 🧪 Validation & Testing
+### System Status (Latest Test - July 6, 2025)
+- ✅ **API Sync**: 10/10 modules perfect match (100%)
+- ✅ **JSON Sync**: All entities synchronized successfully
+- ✅ **Verification**: 19,579 total line items verified
+- ✅ **Windows Compatibility**: Unicode issues resolved
+- ✅ **Error Handling**: Robust timeout and failure recovery
 
 ### Built-in Validation
-- **Schema consistency**: Both sources produce identical column structure
+- **API vs Local**: Real-time comparison during sync
 - **Data integrity**: Type validation and constraint checking
-- **Transformation verification**: Assert statements ensure correct mapping
+- **Schema consistency**: Verified across all modules
+- **Line item tracking**: Complete visibility into document structure
 
-### Validated Results from PoC
-- ✅ CSV → Canonical mapping: **100% success**
-- ✅ JSON → Canonical mapping: **100% success**  
-- ✅ Schema alignment: **Perfect match**
-- ✅ Flattening logic: **Correctly handles nested line_items**
+## � Production Ready Features
 
-## 📈 Performance & Scalability
+### Reliability
+- **Windows PowerShell compatible** output (Unicode issues resolved)
+- **Robust error handling** with clear recovery instructions
+- **Progress tracking** for long-running operations
+- **Session management** for interrupted sync recovery
 
-### Optimizations
-- **Pandas native operations** for fast CSV processing
-- **Batch processing** for large datasets
-- **Memory-efficient** flattening for JSON
-- **SQLite optimizations** for database operations
+### User Experience
+- **Clear status messages** with bracketed indicators [OK], [ERROR]
+- **Comprehensive help** documentation and examples
+- **Multiple verification modes** for different use cases
+- **Timeout management** for large dataset handling
 
-### Scalability Features
-- **Configuration-driven** entity support
-- **Modular transformer** architecture
-- **Extensible mapping** system
-- **Progress tracking** for large datasets
+## 📁 Project Structure
 
-## 🔧 Development & Extension
+```
+Zoho_Data_Sync/
+├── main_api_sync.py              # High-level API sync wrapper
+├── main_json2db.py               # JSON-to-database entry point
+├── src/
+│   ├── api_sync/                 # API sync pipeline
+│   │   ├── cli.py               # Command interface
+│   │   ├── core/                # API communication
+│   │   ├── processing/          # Data processing
+│   │   └── verification/        # Multi-mode verification
+│   └── json_sync/               # JSON-to-database pipeline
+│       ├── orchestrator/
+│       ├── transformers/
+│       └── database/
+├── data/
+│   ├── raw_json/                # API fetch results
+│   └── database/                # SQLite databases
+├── docs/
+│   └── API_SYNC_USER_GUIDE.md   # Comprehensive user guide
+├── copilot_notes/               # Modular project documentation
+└── PROJECT_COMPLETION_REPORT.md # Final project status
+```
 
-### Adding New Entities
-1. Create mapping config: `src/data_pipeline/mappings/{entity}_mapping_config.py`
-2. Add transformer class to `transformer.py`
-3. Update orchestrator in `run_rebuild.py`
-4. Add entity configuration to `config.yaml`
+## 🎯 Getting Help
 
-### Customizing Transformations
-- Modify mapping dictionaries in `bills_mapping_config.py`
-- Extend transformation logic in `BillsTransformer` class
-- Add custom validation rules as needed
+### Documentation
+- **Quick Start**: This README
+- **API Sync**: `api_sync/README.md`  
+- **User Guide**: `docs/API_SYNC_USER_GUIDE.md`
+- **Project Status**: `PROJECT_COMPLETION_REPORT.md`
 
-## 📁 File Structure Details
+### Command Help
+```bash
+python main_api_sync.py --help
+python main_json2db.py --help
+python -m src.api_sync.cli --help
+```
 
-### Key Files
-- **`run_rebuild.py`**: Main orchestrator with CLI interface
-- **`config.yaml`**: Configuration file for all settings
-- **`src/data_pipeline/transformer.py`**: Core transformation classes
-- **`src/data_pipeline/mappings/bills_mapping_config.py`**: Bills-specific mappings
-- **`requirements.txt`**: Python dependencies
-
-### Generated Files
-- **`output/database/canonical.db`**: SQLite canonical database
-- **`logs/rebuild.log`**: Execution logs
-- **`output/database/*.backup_*.db`**: Automatic database backups
-
-## 🎯 Next Steps
+**Status**: Production ready system with comprehensive testing and documentation.
 
 ### Immediate Enhancements
 1. **Add more entities**: Invoices, Customers, Items, etc.

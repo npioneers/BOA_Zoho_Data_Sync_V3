@@ -28,14 +28,14 @@ def setup_logging(log_level: str = "INFO") -> None:
 def print_header(operation: str) -> None:
     """Print operation header."""
     print("\n" + "=" * 60)
-    print(f"🔄 API SYNC - {operation.upper()}")
+    print(f"*** API SYNC - {operation.upper()} ***")
     print("=" * 60)
-    print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 def print_footer(success: bool = True) -> None:
     """Print operation footer."""
-    status = "✅ COMPLETED" if success else "❌ FAILED"
-    print(f"\n🎯 Status: {status}")
+    status = "[COMPLETED]" if success else "[FAILED]"
+    print(f"\nStatus: {status}")
     print("=" * 60)
 
 def cmd_fetch(args) -> int:
@@ -59,17 +59,17 @@ def cmd_fetch(args) -> int:
             latest_sync = get_latest_sync_timestamp()
             if latest_sync:
                 since_timestamp = latest_sync
-                print(f"✅ Using latest sync timestamp: {since_timestamp}")
+                print(f"[OK] Using latest sync timestamp: {since_timestamp}")
             else:
-                print("⚠️ No previous sync found, fetching all records")
+                print("[WARN] No previous sync found, fetching all records")
         elif args.full:
             print("\n--- Full Sync Mode ---")
-            print("🔄 Fetching all records (ignoring previous sync)")
+            print("[SYNC] Fetching all records (ignoring previous sync)")
             since_timestamp = None
         
-        print(f"\n🔍 FETCHING DATA")
-        print(f"📊 Module: {args.module}")
-        print(f"📅 Since: {since_timestamp or 'All records'}")
+        print(f"\n[FETCH] FETCHING DATA")
+        print(f"Module: {args.module}")
+        print(f"Since: {since_timestamp or 'All records'}")
         
         run_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         
@@ -78,7 +78,7 @@ def cmd_fetch(args) -> int:
         zoho_credentials = secrets.get_zoho_credentials()
         access_token = auth.get_access_token(zoho_credentials)
         zoho_org_id = zoho_credentials.get('organization_id')
-        print("✅ Authentication successful")
+        print("[OK] Authentication successful")
         
         # Initialize API client
         print("\n--- Step 2: Initializing API Client ---")
@@ -87,49 +87,49 @@ def cmd_fetch(args) -> int:
             zoho_org_id, 
             "https://www.zohoapis.com/books/v3"
         )
-        print("✅ API client initialized")
+        print("[OK] API client initialized")
         
         # Fetch data
         print(f"\n--- Step 3: Fetching {args.module} Data ---")
         
         # Check if this module has line items
         if hasattr(zoho_client, 'MODULES_WITH_LINE_ITEMS') and args.module in zoho_client.MODULES_WITH_LINE_ITEMS:
-            print(f"📋 Fetching {args.module} with line items...")
+            print(f"[FETCH] Fetching {args.module} with line items...")
             result = zoho_client.get_data_for_module_with_line_items(args.module, since_timestamp=since_timestamp)
             headers = result['headers']
             line_items = result['line_items']
             
             if not headers:
-                print(f"⚠️ No {args.module} found in API response")
+                print(f"[WARN] No {args.module} found in API response")
                 print_footer(True)
                 return 0
                 
-            print(f"✅ Retrieved {len(headers)} {args.module} headers with {len(line_items)} line items from API")
+            print(f"[OK] Retrieved {len(headers)} {args.module} headers with {len(line_items)} line items from API")
             
             # Save both headers and line items
             print("\n--- Step 4: Saving Data ---")
             raw_data_handler.save_raw_json(headers, args.module, run_timestamp)
-            print(f"✅ Headers saved to data/raw_json/{run_timestamp}/{args.module}.json")
+            print(f"[OK] Headers saved to data/raw_json/{run_timestamp}/{args.module}.json")
             
             if line_items:
                 raw_data_handler.save_raw_json(line_items, f"{args.module}_line_items", run_timestamp)
-                print(f"✅ Line items saved to data/raw_json/{run_timestamp}/{args.module}_line_items.json")
+                print(f"[OK] Line items saved to data/raw_json/{run_timestamp}/{args.module}_line_items.json")
             
         else:
             # Standard fetch for modules without line items
             records = zoho_client.get_data_for_module(args.module, since_timestamp=since_timestamp)
             
             if not records:
-                print(f"⚠️ No {args.module} found in API response")
+                print(f"[WARN] No {args.module} found in API response")
                 print_footer(True)
                 return 0
             
-            print(f"✅ Retrieved {len(records)} {args.module} records from API")
+            print(f"[OK] Retrieved {len(records)} {args.module} records from API")
             
             # Save data
             print("\n--- Step 4: Saving Data ---")
             raw_data_handler.save_raw_json(records, args.module, run_timestamp)
-            print(f"✅ Data saved to data/raw_json/{run_timestamp}/{args.module}.json")
+            print(f"[OK] Data saved to data/raw_json/{run_timestamp}/{args.module}.json")
             
             headers = records
             line_items = []
@@ -138,11 +138,11 @@ def cmd_fetch(args) -> int:
         print(f"\n--- Step 5: Quick Analysis ---")
         total_records = len(headers)
         if line_items:
-            print(f"📊 Total headers: {len(headers)}")
-            print(f"📊 Total line items: {len(line_items)}")
-            print(f"📊 Total records: {total_records + len(line_items)}")
+            print(f"[DATA] Total headers: {len(headers)}")
+            print(f"[DATA] Total line items: {len(line_items)}")
+            print(f"[DATA] Total records: {total_records + len(line_items)}")
         else:
-            print(f"📊 Total records fetched: {total_records}")
+            print(f"[DATA] Total records fetched: {total_records}")
             
             # Check for line items in document modules (fallback for old method)
             if args.module in ['invoices', 'bills', 'salesorders', 'purchaseorders', 'creditnotes']:
@@ -152,13 +152,13 @@ def cmd_fetch(args) -> int:
                         line_items_found += len(record['line_items'])
                 
                 if line_items_found > 0:
-                    print(f"📋 Line items found in headers: {line_items_found}")
+                    print(f"[DATA] Line items found in headers: {line_items_found}")
         
         print_footer(True)
         return 0
         
     except Exception as e:
-        print(f"❌ Fetch failed: {e}")
+        print(f"[ERROR] Fetch failed: {e}")
         print_footer(False)
         return 1
 
@@ -173,25 +173,56 @@ def cmd_verify(args) -> int:
         Exit code (0 for success, 1 for failure)
     """
     try:
-        print_header("API VS LOCAL VERIFICATION")
-        
-        # Parse modules list
-        modules = None
-        if args.modules:
-            modules = [m.strip() for m in args.modules.split(',')]
-            print(f"📋 Modules: {modules}")
+        if args.quick:
+            # Quick verification using existing session data
+            from .verification.simultaneous_verifier import load_session_verification
+            
+            print_header("QUICK VERIFICATION (SESSION DATA)")
+            
+            session_dir = args.session or args.directory
+            if not session_dir:
+                # Find the latest session directory
+                base_dir = Path("data/raw_json")
+                if base_dir.exists():
+                    dirs = [d.name for d in base_dir.iterdir() if d.is_dir()]
+                    if dirs:
+                        session_dir = sorted(dirs)[-1]
+                        print(f"📁 Using latest session: {session_dir}")
+            
+            if not session_dir:
+                print("❌ No session directory found for quick verification")
+                return 1
+                
+            results = load_session_verification(session_dir)
+            if "error" in results:
+                print(f"❌ Quick verification failed: {results['error']}")
+                return 1
+                
+            # Print results using simultaneous verifier format
+            from .verification.simultaneous_verifier import print_simultaneous_verification_results
+            print_simultaneous_verification_results(results)
+            
         else:
-            print("📋 Modules: All available")
-        
-        # Run verification
-        verifier = api_local_verifier.ApiLocalVerifier()
-        results = verifier.verify_data_completeness(
-            timestamp_dir=args.directory,
-            modules=modules
-        )
-        
-        # Print results
-        verifier.print_verification_report(results)
+            # Full verification with API calls
+            print_header("API VS LOCAL VERIFICATION")
+            
+            # Parse modules list
+            modules = None
+            if args.modules:
+                modules = [m.strip() for m in args.modules.split(',')]
+                print(f"📋 Modules: {modules}")
+            else:
+                print("📋 Modules: All available")
+            
+            # Run verification
+            verifier = api_local_verifier.ApiLocalVerifier()
+            results = verifier.verify_data_completeness(
+                timestamp_dir=args.directory,
+                modules=modules
+            )
+            
+            # Print results
+            verifier.print_verification_report(results)
         
         # Save results if requested
         if args.output:
@@ -300,6 +331,10 @@ def create_parser() -> argparse.ArgumentParser:
                               help='Comma-separated list of modules to verify (verifies all if not specified)')
     verify_parser.add_argument('--output', '-o',
                               help='Save verification results to JSON file')
+    verify_parser.add_argument('--quick', action='store_true',
+                              help='Quick verification mode (no API calls, uses existing session data)')
+    verify_parser.add_argument('--session', '-s',
+                              help='Specific session directory to use for quick verification')
     
     # Status command
     status_parser = subparsers.add_parser('status', help='Show system status')

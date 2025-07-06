@@ -122,7 +122,9 @@ class ZohoClient:
             # Convert to Zoho format before sending to API
             zoho_timestamp = ensure_zoho_timestamp_format(since_timestamp)
             if zoho_timestamp:
-                params['last_modified_time'] = zoho_timestamp
+                # Try different parameter names for Zoho Books API
+                # Some endpoints use 'modified_time' instead of 'last_modified_time'
+                params['modified_time'] = zoho_timestamp
                 logger.info(f"Fetching '{module_name}' modified since {zoho_timestamp} (converted from {since_timestamp})")
             else:
                 logger.warning(f"Invalid timestamp format, fetching all records: {since_timestamp}")
@@ -313,3 +315,69 @@ class ZohoClient:
                 break
         
         return line_items
+
+    def get_module_count(self, module_name: str, since_timestamp: str = None) -> int:
+        """
+        Get count of records for a specific module by looping through all pages.
+        
+        Args:
+            module_name: The name of the module to count (e.g., 'invoices').
+            since_timestamp: Optional ISO-8601 timestamp to only count records modified since that time.
+        
+        Returns:
+            Count of records in the specified module.
+        """
+        params = {"organization_id": self.organization_id}
+        
+        # Add the modified_time filter if specified (using corrected parameter name)
+        if since_timestamp:
+            # Convert ISO timestamp to YYYY-MM-DD format for Zoho API
+            if 'T' in since_timestamp:
+                date_part = since_timestamp.split('T')[0]
+                params['modified_time'] = date_part
+            else:
+                params['modified_time'] = since_timestamp
+        
+        total_count = 0
+        page = 1
+        params['per_page'] = 200  # Use maximum page size for efficiency
+        
+        try:
+            while True:
+                params['page'] = page
+                
+                response = requests.get(
+                    f"{self.base_url}/{module_name}",
+                    headers=self.headers,
+                    params=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Get records for this page
+                records = data.get(module_name, [])
+                if not records:
+                    break
+                    
+                total_count += len(records)
+                
+                # Check if there are more pages
+                page_context = data.get("page_context", {})
+                has_more_page = page_context.get("has_more_page", False)
+                
+                if not has_more_page:
+                    break
+                    
+                page += 1
+                logger.debug(f"Fetched page {page-1} for {module_name}: {len(records)} records")
+            
+            logger.info(f"API count for {module_name}: {total_count} records across {page} pages")
+            return total_count
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get count for '{module_name}': {e}")
+            if e.response is not None:
+                logger.error(f"Response Status: {e.response.status_code}")
+                logger.error(f"Response Body: {e.response.text}")
+            return 0

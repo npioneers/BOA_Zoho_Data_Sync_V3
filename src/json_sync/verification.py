@@ -1,3 +1,26 @@
+def print_entity_comparison_table(api_counts, db_counts):
+    """
+    Print a formatted table comparing API (JSON) and database entity counts.
+    Args:
+        api_counts: dict of {entity: count}
+        db_counts: dict of {entity: count}
+    """
+    header = (
+        f"{'Endpoint':<22} {'Local API Count':>15} {'Database Count':>15} {'Difference':>12}   Status\n"
+        + "-" * 80
+    )
+    print(header)
+    for entity in sorted(set(api_counts) | set(db_counts)):
+        api_count = api_counts.get(entity, 0)
+        db_count = db_counts.get(entity, 0)
+        diff = db_count - api_count
+        if diff == 0:
+            diff_str = 'Perfect'
+            status = '✅ Match'
+        else:
+            diff_str = f"{diff:+d}"
+            status = f"❌ Off by {diff_str}"
+        print(f"{entity:<22} {api_count:>15} {db_count:>15} {diff_str:>12}   {status}")
 """
 JSON Sync Verification and Reporting
 

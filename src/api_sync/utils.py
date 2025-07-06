@@ -8,7 +8,7 @@ and other common operations.
 import os
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 from pathlib import Path
 
@@ -18,22 +18,26 @@ def convert_to_zoho_timestamp(iso_timestamp: str) -> str:
     """
     Convert ISO timestamp to Zoho API format.
     
-    Zoho expects timestamps in format: YYYY-MM-DD (date only is most compatible)
+    Zoho expects timestamps in format: YYYY-MM-DD HH:MM:SS (MySQL datetime format)
     
     Args:
         iso_timestamp: ISO format timestamp (e.g., 2025-07-01T00:00:00+00:00)
         
     Returns:
-        Zoho-formatted timestamp string (date only)
+        Zoho-formatted timestamp string (MySQL datetime format)
     """
     try:
         # Parse the ISO timestamp
         dt = datetime.fromisoformat(iso_timestamp.replace('Z', '+00:00'))
         
-        # Use date-only format for better compatibility
-        date_only = dt.strftime('%Y-%m-%d')
-        logger.debug(f"Converted {iso_timestamp} to Zoho date format: {date_only}")
-        return date_only
+        # Convert to UTC if it has timezone info
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        
+        # Use MySQL datetime format which many APIs expect
+        mysql_format = dt.strftime('%Y-%m-%d %H:%M:%S')
+        logger.debug(f"Converted {iso_timestamp} to Zoho MySQL format: {mysql_format}")
+        return mysql_format
         
     except Exception as e:
         logger.error(f"Failed to convert timestamp {iso_timestamp}: {e}")
