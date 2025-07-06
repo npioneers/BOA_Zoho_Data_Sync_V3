@@ -15,6 +15,7 @@ from typing import Optional, List
 from .core import auth, secrets, client
 from .processing import raw_data_handler
 from .verification import api_local_verifier
+from .utils import get_latest_sync_timestamp
 
 def setup_logging(log_level: str = "INFO") -> None:
     """Setup logging configuration."""
@@ -50,9 +51,25 @@ def cmd_fetch(args) -> int:
     try:
         print_header("API DATA FETCH")
         
+        # Determine the since timestamp
+        since_timestamp = args.since
+        if not since_timestamp and not args.full:
+            # Auto-detect latest sync timestamp
+            print("\n--- Auto-detecting Latest Sync ---")
+            latest_sync = get_latest_sync_timestamp()
+            if latest_sync:
+                since_timestamp = latest_sync
+                print(f"✅ Using latest sync timestamp: {since_timestamp}")
+            else:
+                print("⚠️ No previous sync found, fetching all records")
+        elif args.full:
+            print("\n--- Full Sync Mode ---")
+            print("🔄 Fetching all records (ignoring previous sync)")
+            since_timestamp = None
+        
         print(f"\n🔍 FETCHING DATA")
         print(f"📊 Module: {args.module}")
-        print(f"📅 Since: {args.since or 'All records'}")
+        print(f"📅 Since: {since_timestamp or 'All records'}")
         
         run_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         
@@ -74,33 +91,68 @@ def cmd_fetch(args) -> int:
         
         # Fetch data
         print(f"\n--- Step 3: Fetching {args.module} Data ---")
-        records = zoho_client.get_data_for_module(args.module, since_timestamp=args.since)
         
-        if not records:
-            print(f"⚠️ No {args.module} found in API response")
-            print_footer(True)
-            return 0
-        
-        print(f"✅ Retrieved {len(records)} {args.module} records from API")
-        
-        # Save data
-        print("\n--- Step 4: Saving Data ---")
-        raw_data_handler.save_raw_json(records, args.module, run_timestamp)
-        print(f"✅ Data saved to data/raw_json/{run_timestamp}/{args.module}.json")
+        # Check if this module has line items
+        if hasattr(zoho_client, 'MODULES_WITH_LINE_ITEMS') and args.module in zoho_client.MODULES_WITH_LINE_ITEMS:
+            print(f"📋 Fetching {args.module} with line items...")
+            result = zoho_client.get_data_for_module_with_line_items(args.module, since_timestamp=since_timestamp)
+            headers = result['headers']
+            line_items = result['line_items']
+            
+            if not headers:
+                print(f"⚠️ No {args.module} found in API response")
+                print_footer(True)
+                return 0
+                
+            print(f"✅ Retrieved {len(headers)} {args.module} headers with {len(line_items)} line items from API")
+            
+            # Save both headers and line items
+            print("\n--- Step 4: Saving Data ---")
+            raw_data_handler.save_raw_json(headers, args.module, run_timestamp)
+            print(f"✅ Headers saved to data/raw_json/{run_timestamp}/{args.module}.json")
+            
+            if line_items:
+                raw_data_handler.save_raw_json(line_items, f"{args.module}_line_items", run_timestamp)
+                print(f"✅ Line items saved to data/raw_json/{run_timestamp}/{args.module}_line_items.json")
+            
+        else:
+            # Standard fetch for modules without line items
+            records = zoho_client.get_data_for_module(args.module, since_timestamp=since_timestamp)
+            
+            if not records:
+                print(f"⚠️ No {args.module} found in API response")
+                print_footer(True)
+                return 0
+            
+            print(f"✅ Retrieved {len(records)} {args.module} records from API")
+            
+            # Save data
+            print("\n--- Step 4: Saving Data ---")
+            raw_data_handler.save_raw_json(records, args.module, run_timestamp)
+            print(f"✅ Data saved to data/raw_json/{run_timestamp}/{args.module}.json")
+            
+            headers = records
+            line_items = []
         
         # Quick analysis
         print(f"\n--- Step 5: Quick Analysis ---")
-        print(f"📊 Total records fetched: {len(records)}")
-        
-        # Check for line items in document modules
-        if args.module in ['invoices', 'bills', 'salesorders', 'purchaseorders', 'creditnotes']:
-            line_items_found = 0
-            for record in records:
-                if 'line_items' in record and record['line_items']:
-                    line_items_found += len(record['line_items'])
+        total_records = len(headers)
+        if line_items:
+            print(f"📊 Total headers: {len(headers)}")
+            print(f"📊 Total line items: {len(line_items)}")
+            print(f"📊 Total records: {total_records + len(line_items)}")
+        else:
+            print(f"📊 Total records fetched: {total_records}")
             
-            if line_items_found > 0:
-                print(f"📋 Line items found: {line_items_found}")
+            # Check for line items in document modules (fallback for old method)
+            if args.module in ['invoices', 'bills', 'salesorders', 'purchaseorders', 'creditnotes']:
+                line_items_found = 0
+                for record in headers:
+                    if 'line_items' in record and record['line_items']:
+                        line_items_found += len(record['line_items'])
+                
+                if line_items_found > 0:
+                    print(f"📋 Line items found in headers: {line_items_found}")
         
         print_footer(True)
         return 0
@@ -237,6 +289,8 @@ def create_parser() -> argparse.ArgumentParser:
                              help='Module to fetch data from')
     fetch_parser.add_argument('--since',
                              help='Only fetch records modified since this timestamp (ISO format)')
+    fetch_parser.add_argument('--full', action='store_true',
+                             help='Fetch all records, ignore latest sync timestamp')
     
     # Verify command
     verify_parser = subparsers.add_parser('verify', help='Verify local data against API')

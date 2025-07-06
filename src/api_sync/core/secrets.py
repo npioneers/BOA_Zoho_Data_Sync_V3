@@ -13,6 +13,10 @@ ZOHO_SECRET_NAMES = [
     "ZOHO_REFRESH_TOKEN",
 ]
 
+OPTIONAL_ZOHO_SECRETS = [
+    "ZOHO_ORGANIZATION_ID",
+]
+
 def get_zoho_credentials() -> Dict[str, str]:
     """
     Fetches Zoho credentials from Google Cloud Secret Manager.
@@ -47,6 +51,7 @@ def get_zoho_credentials() -> Dict[str, str]:
     credentials = {}
     logger.info("Accessing Google Cloud Secret Manager...")
 
+    # Fetch required secrets
     for secret_name in ZOHO_SECRET_NAMES:
         resource_name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         
@@ -66,8 +71,29 @@ def get_zoho_credentials() -> Dict[str, str]:
             logger.error(f"An unexpected error occurred while fetching '{secret_name}': {e}")
             raise SystemExit(1)
 
-    # Add organization_id for backwards compatibility
-    credentials['organization_id'] = credentials.get('zoho_organization_id', '')
+    # Fetch optional secrets (don't fail if not found)
+    for secret_name in OPTIONAL_ZOHO_SECRETS:
+        resource_name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+        
+        try:
+            logger.debug(f"Accessing optional secret: {secret_name}")
+            response = client.access_secret_version(request={"name": resource_name})
+            secret_value = response.payload.data.decode("UTF-8")
+            credentials[secret_name.lower()] = secret_value
+        except exceptions.NotFound:
+            logger.debug(f"Optional secret '{secret_name}' not found in project '{project_id}', will check environment variables.")
+        except exceptions.PermissionDenied:
+            logger.warning(f"Permission denied for optional secret '{secret_name}' in project '{project_id}'.")
+        except Exception as e:
+            logger.warning(f"Error fetching optional secret '{secret_name}': {e}")
+
+    # Add organization_id for backwards compatibility and env fallback
+    org_id = credentials.get('zoho_organization_id', '') or os.getenv('ZOHO_ORGANIZATION_ID', '')
+    credentials['organization_id'] = org_id
+    
+    if not org_id:
+        logger.warning("Organization ID not found in secrets or environment variables.")
+        logger.warning("Set ZOHO_ORGANIZATION_ID environment variable or add to Secret Manager.")
     
     logger.info("All secrets fetched successfully.")
     return credentials
