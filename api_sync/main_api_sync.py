@@ -1209,17 +1209,17 @@ def convert_cutoff_date_to_timestamp(cutoff_date: str) -> Optional[str]:
 
 def perform_pre_sync_check(wrapper, modules_to_fetch: list = None) -> Optional[str]:
     """
-    Perform pre-sync check for comprehensive data availability.
+    Perform pre-sync check for data availability.
     
-    If comprehensive data is not available for modules with line items,
-    prompt the user for a cutoff date to avoid slow individual API calls.
+    This function determines if we can proceed with normal incremental sync,
+    or if we need a cutoff date for first-time sync.
     
     Args:
         wrapper: ApiSyncWrapper instance
         modules_to_fetch: List of modules that will be fetched, or None for all fetchable modules
         
     Returns:
-        ISO timestamp string to use as since_timestamp, or None for no cutoff
+        ISO timestamp string to use as since_timestamp, or None for normal incremental sync
     """
     # Handle imports for both relative and direct execution contexts
     try:
@@ -1243,11 +1243,12 @@ def perform_pre_sync_check(wrapper, modules_to_fetch: list = None) -> Optional[s
         modules_to_fetch = list(fetchable_modules.keys())
     
     # Only check modules that we're actually going to fetch
-    print("\n🔍 Performing pre-sync comprehensive data check...")
-    has_comprehensive, missing_modules = check_comprehensive_data_availability(modules_to_fetch)
+    print("\n🔍 Checking existing data for incremental sync...")
+    has_data_or_comprehensive, missing_modules = check_comprehensive_data_availability(modules_to_fetch)
     
-    if has_comprehensive:
-        print("✅ Comprehensive data available for all modules with line items")
+    if has_data_or_comprehensive:
+        print("✅ Can proceed with normal incremental sync")
+        print("🔄 Will fetch data since last sync timestamp")
         return None
     
     # Check if config allows prompting
@@ -1279,7 +1280,8 @@ def perform_pre_sync_check(wrapper, modules_to_fetch: list = None) -> Optional[s
         return None
     
     # Prompt user for cutoff date
-    print(f"\n⚠️  Missing comprehensive data for: {', '.join(missing_modules)}")
+    print(f"\n⚠️  No existing sync data found for: {', '.join(missing_modules)}")
+    print("📝 This appears to be a first-time sync for these modules")
     cutoff_date = prompt_for_cutoff_date()
     
     if cutoff_date:

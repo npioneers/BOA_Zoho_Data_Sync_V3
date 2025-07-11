@@ -284,17 +284,17 @@ def check_comprehensive_data_availability(modules_to_check: list = None) -> Tupl
     """
     Check if comprehensive data is available for modules with line items.
     
-    This function checks for comprehensive (bulk) data in JSON storage for modules that have line items.
-    If comprehensive data is not found, those modules will require individual API calls for each record,
-    which can be slow for large datasets.
+    This function determines whether a cutoff date is needed for incremental sync.
+    If we have ANY existing sync data, we can proceed with normal incremental sync.
+    If we have NO existing data, we need either comprehensive data or a cutoff date.
     
     Args:
         modules_to_check: List of module names to check. If None, checks all modules with line items.
         
     Returns:
-        Tuple of (has_comprehensive_data: bool, missing_modules: list)
-        - has_comprehensive_data: True if comprehensive data exists for all checked modules
-        - missing_modules: List of modules that don't have comprehensive data
+        Tuple of (has_data_or_comprehensive: bool, missing_modules: list)
+        - has_data_or_comprehensive: True if we can proceed without cutoff date
+        - missing_modules: List of modules that need cutoff date (empty if incremental sync possible)
     """
     from .config import get_config
     
@@ -321,55 +321,22 @@ def check_comprehensive_data_availability(modules_to_check: list = None) -> Tupl
     json_base_dir = config.json_base_dir
     org_id = config.default_organization_id
     
+    logger.info(f"Checking data availability for modules: {modules_to_check}")
+    
+    # First check: Do we have ANY existing sync data?
+    has_any_existing_data = _check_for_existing_sync_data(json_base_dir, modules_to_check)
+    
+    if has_any_existing_data:
+        logger.info("✅ Existing sync data found - can proceed with normal incremental sync")
+        logger.info("🔄 No cutoff date needed - will sync since last timestamp")
+        return True, []
+    
+    # No existing data found - check for comprehensive data
+    logger.info("🔍 No existing sync data found - checking for comprehensive data")
     missing_modules = []
     
-    logger.info(f"Checking comprehensive data availability for modules: {modules_to_check}")
-    
     for module in modules_to_check:
-        has_comprehensive = False
-        
-        # Check timestamped directories first (highest priority)
-        timestamped_path = Path(json_base_dir) / org_id / "timestamped"
-        if timestamped_path.exists():
-            for sync_dir in sorted(timestamped_path.iterdir(), reverse=True):
-                if sync_dir.is_dir() and is_timestamp_dir(sync_dir.name):
-                    module_file = sync_dir / f"{module}.json"
-                    if module_file.exists():
-                        try:
-                            import json
-                            with open(module_file, 'r') as f:
-                                data = json.load(f)
-                                # Check if this is comprehensive data (has bulk records)
-                                if isinstance(data, list) and len(data) > 0:
-                                    # Check if records have line items populated
-                                    sample_record = data[0]
-                                    if isinstance(sample_record, dict) and 'line_items' in sample_record:
-                                        line_items = sample_record.get('line_items', [])
-                                        if isinstance(line_items, list) and len(line_items) > 0:
-                                            logger.info(f"✅ Found comprehensive data for {module} in {sync_dir.name}")
-                                            has_comprehensive = True
-                                            break
-                        except Exception as e:
-                            logger.warning(f"Error checking {module_file}: {e}")
-                            continue
-        
-        # Check consolidated directory if not found in timestamped
-        if not has_comprehensive:
-            consolidated_path = Path(json_base_dir) / org_id / "consolidated" / f"{module}.json"
-            if consolidated_path.exists():
-                try:
-                    import json
-                    with open(consolidated_path, 'r') as f:
-                        data = json.load(f)
-                        if isinstance(data, list) and len(data) > 0:
-                            sample_record = data[0]
-                            if isinstance(sample_record, dict) and 'line_items' in sample_record:
-                                line_items = sample_record.get('line_items', [])
-                                if isinstance(line_items, list) and len(line_items) > 0:
-                                    logger.info(f"✅ Found comprehensive data for {module} in consolidated")
-                                    has_comprehensive = True
-                except Exception as e:
-                    logger.warning(f"Error checking consolidated {module}: {e}")
+        has_comprehensive = _check_comprehensive_data_for_module(module, json_base_dir, org_id)
         
         if not has_comprehensive:
             logger.warning(f"❌ No comprehensive data found for {module}")
@@ -381,5 +348,112 @@ def check_comprehensive_data_availability(modules_to_check: list = None) -> Tupl
         logger.info("✅ Comprehensive data available for all checked modules")
     else:
         logger.warning(f"⚠️  Missing comprehensive data for: {', '.join(missing_modules)}")
+        logger.info("💡 Cutoff date will be required for first-time sync")
     
     return has_all_comprehensive, missing_modules
+
+def _check_for_existing_sync_data(json_base_dir: str, modules_to_check: list) -> bool:
+    """
+    Check if we have ANY existing sync data (not necessarily comprehensive).
+    
+    This indicates that we can do incremental sync without needing a cutoff date.
+    """
+    # Check both traditional and session folder structures
+    paths_to_check = [
+        Path(json_base_dir),  # Traditional: data/raw_json
+        Path("data/sync_sessions")  # Session folders
+    ]
+    
+    for base_path in paths_to_check:
+        if not base_path.exists():
+            continue
+            
+        # For session folders, look inside each session
+        if "sync_sessions" in str(base_path):
+            for session_dir in base_path.iterdir():
+                if session_dir.is_dir() and session_dir.name.startswith("sync_session_"):
+                    raw_json_path = session_dir / "raw_json"
+                    if _check_path_for_module_data(raw_json_path, modules_to_check):
+                        logger.info(f"✅ Found existing data in session: {session_dir.name}")
+                        return True
+        else:
+            # Traditional structure
+            if _check_path_for_module_data(base_path, modules_to_check):
+                logger.info(f"✅ Found existing data in: {base_path}")
+                return True
+    
+    logger.info("🔍 No existing sync data found for any checked modules")
+    return False
+
+def _check_path_for_module_data(base_path: Path, modules_to_check: list) -> bool:
+    """Check if a path contains any data for the specified modules."""
+    if not base_path.exists():
+        return False
+        
+    # Look for timestamp directories
+    for timestamp_dir in base_path.iterdir():
+        if timestamp_dir.is_dir() and is_timestamp_dir(timestamp_dir.name):
+            # Check if any of our modules have data files
+            for module in modules_to_check:
+                module_file = timestamp_dir / f"{module}.json"
+                if module_file.exists():
+                    try:
+                        import json
+                        with open(module_file, 'r') as f:
+                            data = json.load(f)
+                            if isinstance(data, list) and len(data) > 0:
+                                logger.debug(f"Found {len(data)} records for {module} in {timestamp_dir.name}")
+                                return True
+                    except:
+                        continue
+    
+    return False
+
+def _check_comprehensive_data_for_module(module: str, json_base_dir: str, org_id: str) -> bool:
+    """
+    Check if a module has comprehensive data (with line items already populated).
+    
+    This is only used when no existing sync data is found.
+    """
+    # Check timestamped directories first (highest priority)
+    timestamped_path = Path(json_base_dir) / org_id / "timestamped"
+    if timestamped_path.exists():
+        for sync_dir in sorted(timestamped_path.iterdir(), reverse=True):
+            if sync_dir.is_dir() and is_timestamp_dir(sync_dir.name):
+                module_file = sync_dir / f"{module}.json"
+                if module_file.exists():
+                    try:
+                        import json
+                        with open(module_file, 'r') as f:
+                            data = json.load(f)
+                            # Check if this is comprehensive data (has bulk records with line items)
+                            if isinstance(data, list) and len(data) > 0:
+                                # Check if records have line items populated
+                                sample_record = data[0]
+                                if isinstance(sample_record, dict) and 'line_items' in sample_record:
+                                    line_items = sample_record.get('line_items', [])
+                                    if isinstance(line_items, list) and len(line_items) > 0:
+                                        logger.info(f"✅ Found comprehensive data for {module} in {sync_dir.name}")
+                                        return True
+                    except Exception as e:
+                        logger.warning(f"Error checking {module_file}: {e}")
+                        continue
+    
+    # Check consolidated directory if not found in timestamped
+    consolidated_path = Path(json_base_dir) / org_id / "consolidated" / f"{module}.json"
+    if consolidated_path.exists():
+        try:
+            import json
+            with open(consolidated_path, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    sample_record = data[0]
+                    if isinstance(sample_record, dict) and 'line_items' in sample_record:
+                        line_items = sample_record.get('line_items', [])
+                        if isinstance(line_items, list) and len(line_items) > 0:
+                            logger.info(f"✅ Found comprehensive data for {module} in consolidated")
+                            return True
+        except Exception as e:
+            logger.warning(f"Error checking consolidated {module}: {e}")
+    
+    return False
