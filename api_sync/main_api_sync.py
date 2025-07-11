@@ -862,12 +862,15 @@ def interactive_menu():
                     if wrapper.runner:
                         try:
                             result = wrapper.fetch_all_modules(
-                                full_sync=full_sync, 
+                                full_sync=full_sync,
                                 include_excluded=False,
-                                since_timestamp=cutoff_timestamp
+                                since_timestamp=cutoff_timestamp,
+                                use_session_folder=True
                             )
-                            if result.get('success'):
-                                summary = result.get('summary', {})
+                            
+                            # Check success status from summary, not top-level
+                            summary = result.get('summary', {})
+                            if summary.get('success', False):
                                 print(f"✅ Successfully processed {summary.get('modules_succeeded', 0)} modules")
                                 print(f"📊 Total records: {summary.get('total_records', 0)}")
                                 if summary.get('total_line_items', 0) > 0:
@@ -876,8 +879,14 @@ def interactive_menu():
                                     print(f"📁 Data saved to: {summary.get('output_dir')}")
                                 if summary.get('failed_modules'):
                                     print(f"⚠️  Failed modules: {', '.join(summary.get('failed_modules'))}")
+                                # Show session info if available
+                                if result.get('sync_session'):
+                                    session_info = result['sync_session']
+                                    print(f"📁 Session folder: {session_info.get('session_folder')}")
                             else:
-                                print(f"❌ Fetch failed: {result.get('error', 'Unknown error')}")
+                                print(f"❌ Fetch failed: {result.get('error', 'Some modules failed')}")
+                                if summary.get('failed_modules'):
+                                    print(f"   Failed modules: {', '.join(summary.get('failed_modules'))}")
                         except Exception as e:
                             print(f"❌ Error: {e}")
                     else:
@@ -938,12 +947,15 @@ def interactive_menu():
                     
                     try:
                         result = wrapper.fetch_all_modules(
-                            full_sync=full_sync, 
+                            full_sync=full_sync,
                             include_excluded=True,
-                            since_timestamp=cutoff_timestamp
+                            since_timestamp=cutoff_timestamp,
+                            use_session_folder=True
                         )
-                        if result.get('success'):
-                            summary = result.get('summary', {})
+                        
+                        # Check success status from summary, not top-level
+                        summary = result.get('summary', {})
+                        if summary.get('success', False):
                             print(f"✅ Successfully processed {summary.get('modules_succeeded', 0)} modules")
                             print(f"📊 Total records: {summary.get('total_records', 0)}")
                             if summary.get('total_line_items', 0) > 0:
@@ -952,8 +964,14 @@ def interactive_menu():
                                 print(f"📁 Data saved to: {summary.get('output_dir')}")
                             if summary.get('failed_modules'):
                                 print(f"⚠️  Failed modules: {', '.join(summary.get('failed_modules'))}")
+                            # Show session info if available
+                            if result.get('sync_session'):
+                                session_info = result['sync_session']
+                                print(f"📁 Session folder: {session_info.get('session_folder')}")
                         else:
-                            print(f"❌ Fetch failed: {result.get('error', 'Unknown error')}")
+                            print(f"❌ Fetch failed: {result.get('error', 'Some modules failed')}")
+                            if summary.get('failed_modules'):
+                                print(f"   Failed modules: {', '.join(summary.get('failed_modules'))}")
                     except Exception as e:
                         print(f"❌ Error: {e}")
                         
