@@ -20,8 +20,22 @@ except ImportError:
 class JSONDataPopulator:
     """Populates JSON tables with filtered data from consolidated JSON files"""
     
-    def __init__(self, db_path: str = "data/database/production.db", 
-                 json_dir: str = "data/raw_json/json_compiled"):
+    def __init__(self, db_path: str = None, 
+                 json_dir: str = None):
+        # Import here to avoid circular imports
+        try:
+            from .config import get_config
+        except ImportError:
+            from config import get_config
+        
+        config = get_config()
+        
+        if db_path is None:
+            db_path = config.get_database_path()
+        if json_dir is None:
+            json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
+                       else config.get_consolidated_path())
+            
         self.db_path = Path(db_path)
         self.json_dir = Path(json_dir)
         self.analyzer = JSONAnalyzer(str(json_dir))
@@ -413,10 +427,22 @@ def main():
     """Main function for data population"""
     import argparse
     
+    # Get default values from configuration
+    try:
+        from config import get_config
+        config = get_config()
+        default_db_path = config.get_database_path()
+        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
+                           else config.get_consolidated_path())
+    except ImportError:
+        # Fallback to hardcoded values if config not available
+        default_db_path = "data/database/production.db"
+        default_json_dir = "data/raw_json/json_compiled"
+    
     parser = argparse.ArgumentParser(description="JSON Data Population Tool")
-    parser.add_argument("--db-path", default="data/database/production.db",
+    parser.add_argument("--db-path", default=default_db_path,
                        help="Path to the database file")
-    parser.add_argument("--json-dir", default="data/raw_json/json_compiled",
+    parser.add_argument("--json-dir", default=default_json_dir,
                        help="Path to consolidated JSON directory")
     parser.add_argument("--force-recreate", action="store_true",
                        help="Clear existing data before population")

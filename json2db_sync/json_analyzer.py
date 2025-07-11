@@ -13,7 +13,18 @@ from collections import defaultdict
 class JSONAnalyzer:
     """Analyzes JSON files to determine database table requirements"""
     
-    def __init__(self, json_dir: str = "data/raw_json/json_compiled"):
+    def __init__(self, json_dir: str = None):
+        # Import here to avoid circular imports
+        if json_dir is None:
+            try:
+                from .config import get_config
+            except ImportError:
+                from config import get_config
+            
+            config = get_config()
+            json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
+                       else config.get_consolidated_path())
+        
         self.json_dir = Path(json_dir)
         self.setup_logging()
         

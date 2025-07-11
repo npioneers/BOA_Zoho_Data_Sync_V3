@@ -895,3 +895,386 @@ After systematic testing with `test_api_filtering_support.py`, we discovered tha
 4. ✅ Update configuration to mark all modules as supporting API filtering
 
 ---
+
+# JSON2DB_SYNC CLEANUP ANALYSIS
+
+## Current Folder Structure Analysis
+Based on detailed examination of `json2db_sync` folder:
+
+### Core Production Files (Keep):
+1. **json_analyzer.py** (14,716 bytes) - Core functionality for analyzing JSON files
+2. **table_generator.py** (13,220 bytes) - Generates SQL schemas from JSON
+3. **json_tables_recreate.py** (19,056 bytes) - Main production script (newer, supersedes database_creator.py)
+4. **data_populator.py** (18,645 bytes) - Handles data population
+5. **summary_reporter.py** (17,848 bytes) - Report generation
+6. **check_json_tables.py** (1,280 bytes) - Verification utility
+7. **__init__.py** (343 bytes) - Package initialization
+
+### Duplicate/Redundant Files (Target for Cleanup):
+1. **sql_schema_20250707_220730.sql** (41,338 bytes) - Older schema dump
+2. **sql_schema_20250707_221605.sql** (41,338 bytes) - Newer schema dump (IDENTICAL content except timestamp)
+3. **database_creator.py** (14,122 bytes) - According to README, this is "superseded" by json_tables_recreate.py
+
+### Logs Directory:
+- **logs/json_analysis_20250708_064139.log** (2,145 bytes) - Single log file, could be archived
+
+### Documentation:
+- **README_JSON_TABLES_RECREATION.md** (1,704 bytes) - Keep but could be renamed to README.md
+
+## Cleanup Recommendations:
+1. **Remove duplicate SQL schema file** (keep newer one only)
+2. **Archive superseded database_creator.py** (move to archive or remove completely)
+3. **Reorganize logs** (create archive structure if needed)
+4. **Rename README** for consistency
+5. **Add main/runner pattern** following package structure guidelines
+
+## Files to Process:
+- DELETE: sql_schema_20250707_220730.sql (older duplicate)
+- MOVE/ARCHIVE: database_creator.py (superseded)
+- CONSIDER: logs organization
+- RENAME: README for consistency
+
+---
+
+# FEASIBILITY ANALYSIS: Direct API_SYNC Integration 
+## Bypassing Consolidator for JSON2DB_SYNC
+
+**Analysis Date**: July 11, 2025  
+**Current State**: json2db_sync → consolidated JSON  
+**Target State**: json2db_sync → api_sync sessions/traditional
+
+## 🔍 CURRENT STATE ANALYSIS
+
+### Current Architecture:
+```
+API_SYNC → Consolidator → json2db_sync
+   │            │             │
+   │            │         Expects: data/raw_json/json_compiled/
+   │            │         Files: invoices.json, items.json, etc.
+   │            │         Format: Single consolidated file per module
+   │         Creates: Merged JSON files from all sessions
+   │         Location: data/raw_json/json_compiled/
+   │
+   Produces: Session-based structure
+   Location: api_sync/data/sync_sessions/ or api_sync/data/raw_json/
+```
+
+### Current JSON2DB_SYNC Expectations:
+1. **Hardcoded Paths**: 22 references to `data/raw_json/json_compiled`
+2. **File Discovery**: Expects specific filenames in single directory
+3. **Data Format**: Assumes consolidated arrays per module
+4. **Table Mapping**: Hardcoded filename → table_name mapping
+
+## 🎯 TARGET API_SYNC STRUCTURE
+
+### Session-Based Structure:
+```
+api_sync/data/sync_sessions/sync_session_2025-07-11_13-54-38/
+└── raw_json/
+    ├── 2025-07-11_13-54-38/    # Timestamp dir 1
+    │   ├── invoices.json       # Main entity
+    │   └── invoices_line_items.json
+    ├── 2025-07-11_13-54-50/    # Timestamp dir 2  
+    │   └── items.json
+    └── 2025-07-11_13-54-52/    # Timestamp dir 3
+        └── contacts.json
+```
+
+### Traditional Structure:
+```
+api_sync/data/raw_json/
+├── 2025-07-11_10-05-44/       # Latest timestamp
+│   ├── creditnotes.json
+│   └── creditnotes_line_items.json
+└── 2025-07-11_10-02-05/       # Previous timestamp
+    ├── creditnotes.json  
+    └── creditnotes_line_items.json
+```
+
+## ✅ FEASIBILITY ASSESSMENT
+
+### Technical Feasibility: **HIGH** ✅
+- **Data Format**: Same JSON array structure
+- **Content**: Identical field structures (from same API source)  
+- **Files**: Same naming conventions (invoices.json, etc.)
+- **Database Tables**: No changes required
+
+### Implementation Complexity: **MEDIUM** ⚖️
+- **File Discovery**: Need new discovery logic
+- **Data Aggregation**: Must combine across timestamp directories
+- **Path Management**: Update all hardcoded paths
+- **Error Handling**: Handle missing files/sessions gracefully
+
+### Benefits Assessment: **HIGH** 🚀
+- **Real-time Data**: No consolidation delay
+- **Data Freshness**: Always latest session
+- **Simplified Pipeline**: Remove consolidation step
+- **Session Metadata**: Access to sync timestamps and status
+
+## 🛠️ IMPLEMENTATION EFFORT ANALYSIS
+
+### Phase 1: Core Data Locator (MEDIUM Effort)
+**Files to Create**: 1 new file
+**Files to Modify**: 0
+**Estimated Time**: 4-6 hours
+
+```python
+# NEW: json2db_sync/api_sync_data_locator.py
+class ApiSyncDataLocator:
+    def discover_latest_session_files(self) -> Dict[str, Path]
+    def discover_traditional_files(self) -> Dict[str, Path]  
+    def aggregate_module_data(self, module_name: str) -> List[Dict]
+    def get_session_metadata(self) -> Dict[str, Any]
+```
+
+**Key Logic**:
+- Find latest session or traditional timestamp
+- Scan all timestamp directories within session
+- Build mapping: {module_name: [file_paths]}
+- Aggregate data from multiple timestamp dirs
+
+### Phase 2: JSON Analyzer Update (LOW-MEDIUM Effort)
+**Files to Modify**: 1 file (json_analyzer.py)  
+**Lines Changed**: ~50-80 lines
+**Estimated Time**: 2-3 hours
+
+**Changes Required**:
+- Replace `self.json_dir` discovery with `ApiSyncDataLocator`
+- Update `analyze_all_json_files()` method
+- Handle aggregated data from multiple timestamp dirs
+- Maintain backward compatibility option
+
+### Phase 3: Data Populator Update (MEDIUM Effort)
+**Files to Modify**: 1 file (data_populator.py)
+**Lines Changed**: ~80-120 lines  
+**Estimated Time**: 4-5 hours
+
+**Changes Required**:
+- Replace direct file loading with aggregated loading
+- Handle data from multiple timestamp directories
+- Update cutoff date filtering logic
+- Maintain line_items relationship integrity
+
+### Phase 4: Runner/Wrapper Updates (LOW Effort)
+**Files to Modify**: 2 files (runner + wrapper)
+**Lines Changed**: ~30-50 lines
+**Estimated Time**: 1-2 hours
+
+**Changes Required**:
+- Update default paths from `data/raw_json/json_compiled` → `../api_sync`
+- Update menu prompts and help text
+- Add session metadata display
+
+### Phase 5: Testing & Documentation (MEDIUM Effort)
+**Estimated Time**: 3-4 hours
+
+**Requirements**:
+- Test with session-based structure
+- Test with traditional structure  
+- Test backward compatibility
+- Update documentation and examples
+
+## 📊 DETAILED EFFORT BREAKDOWN
+
+| Component | Complexity | Time Est. | Risk Level | Dependencies |
+|-----------|------------|-----------|------------|--------------|
+| **Data Locator** | Medium | 4-6h | Low | None |
+| **JSON Analyzer** | Low-Med | 2-3h | Low | Data Locator |
+| **Data Populator** | Medium | 4-5h | Medium | Data Locator |
+| **Runner/Wrapper** | Low | 1-2h | Low | All above |
+| **Testing** | Medium | 3-4h | Medium | All above |
+| **Documentation** | Low | 1h | Low | All above |
+| **TOTAL** | **Medium** | **15-21h** | **Low-Med** | Sequential |
+
+## 🔄 IMPLEMENTATION STRATEGY
+
+### Option A: Clean Implementation (RECOMMENDED)
+**Approach**: Direct replacement with api_sync integration
+**Timeline**: 2-3 days
+**Benefits**: Clean architecture, no legacy code
+**Risks**: Breaking change
+
+### Option B: Dual Support  
+**Approach**: Support both consolidated and api_sync
+**Timeline**: 3-4 days  
+**Benefits**: Backward compatibility, gradual migration
+**Risks**: Increased complexity
+
+### Option C: Gradual Migration
+**Approach**: Add api_sync support, deprecate consolidated
+**Timeline**: 2 days + migration period
+**Benefits**: Safe transition, user choice
+**Risks**: Maintenance overhead
+
+## ⚡ QUICK WINS IDENTIFIED
+
+### Immediate Benefits:
+1. **Data Freshness**: No consolidation lag
+2. **Session Metadata**: Sync timestamps, success status
+3. **Simplified Pipeline**: Remove consolidation dependency
+4. **Real-time Sync**: Direct connection to latest API data
+
+### Long-term Benefits:
+1. **Unified Architecture**: Single data flow
+2. **Better Monitoring**: Session-based health checks
+3. **Improved Debugging**: Session logs and reports
+4. **Reduced Storage**: No duplicate consolidated files
+
+## ❗ RISKS & MITIGATION
+
+### Risk 1: Data Aggregation Complexity
+**Impact**: Medium
+**Mitigation**: Robust aggregation logic with error handling
+**Fallback**: Traditional structure support
+
+### Risk 2: Performance Impact  
+**Impact**: Low-Medium
+**Mitigation**: Efficient file discovery and caching
+**Testing**: Performance benchmarking with large datasets
+
+### Risk 3: Missing Session Data
+**Impact**: Medium  
+**Mitigation**: Graceful fallback to traditional structure
+**Error Handling**: Clear user messages and guidance
+
+## 🎯 RECOMMENDED APPROACH
+
+### Phase 1: Prototype (Day 1)
+- Create `ApiSyncDataLocator` class
+- Test data discovery with real api_sync sessions
+- Validate data aggregation logic
+
+### Phase 2: Core Integration (Day 2)  
+- Update `JSONAnalyzer` and `DataPopulator`
+- Implement session-based loading
+- Test with existing database
+
+### Phase 3: UI & Testing (Day 3)
+- Update runner/wrapper defaults
+- Comprehensive testing both structures
+- Documentation updates
+
+## 💡 CONCLUSION
+
+### Feasibility: **HIGH** ✅
+- Same data format and structure
+- No database schema changes required
+- Clear implementation path
+
+### Effort: **MEDIUM** (15-21 hours)
+- Manageable scope within 2-3 days
+- Most complexity in data aggregation logic
+- Sequential development possible
+
+### Benefits: **HIGH** 🚀  
+- Real-time data access
+- Simplified architecture
+- Better monitoring and debugging
+- Reduced storage requirements
+
+### Recommendation: **PROCEED** ✅
+Direct api_sync integration is highly feasible with reasonable effort and significant benefits. The clean implementation approach is recommended for best long-term architecture.
+
+---
+
+# Configuration System Implementation Status
+
+## ✅ COMPLETED - Configuration Infrastructure
+**Date:** Current session  
+**Task:** Remove hardcoded paths and implement configuration-driven approach
+
+### Created Files:
+1. **json2db_config.py** - Comprehensive configuration manager
+   - Hierarchical configuration: Environment Variables > Config File > Defaults
+   - Default target: `../api_sync` (no hardcoding)
+   - Database table mapping preservation (no changes to database-driven mappings)
+   - Session-based data discovery for API sync
+   - Fallback mechanisms for data source availability
+   - Type conversion for environment variables
+   - Path resolution to absolute paths
+   - Validation and example generation
+
+2. **json2db_sync_config.example.json** - Generated example configuration
+   - Shows all available settings with defaults
+   - Documents structure for users
+   - Ready for customization
+
+3. **.env.example** - Environment variables template
+   - All 22+ configurable parameters
+   - Development and production examples
+   - Clear documentation for each variable
+
+### Key Configuration Features:
+- **Primary Data Source:** `../api_sync` (replaces hardcoded consolidated paths)
+- **Fallback Support:** Graceful degradation if primary source unavailable
+- **Session Discovery:** Intelligent session selection with age and success criteria
+- **Database Preservation:** No changes to existing database table mapping system
+- **Environment Override:** Full environment variable support for deployment flexibility
+
+### Configuration Hierarchy Example:
+```
+1. Environment: JSON2DB_API_SYNC_PATH=../custom_api_path
+2. Config File: "api_sync_path": "../api_sync"  
+3. Default: "../api_sync"
+```
+
+### Validation Results:
+- Configuration loads successfully
+- Detects missing directories with warnings
+- Provides fallback path suggestions
+- Ready for runner/wrapper integration
+
+## 🚨 CRITICAL DISCOVERY - API Sync Data Structure
+
+**Date:** Current session  
+**Issue:** Configuration system needs major update for session-based structure
+
+### API Sync Actual Structure:
+```
+api_sync/data/sync_sessions/
+├── sync_session_2025-07-11_13-54-38/    # Session folder
+│   ├── session_info.json               # Session metadata  
+│   ├── raw_json/                       # Raw JSON data
+│   │   ├── 2025-07-11_13-54-38/       # Timestamp folder 1
+│   │   │   ├── invoices.json        ✅ Module file location
+│   │   │   └── invoices_line_items.json
+│   │   ├── 2025-07-11_13-54-50/       # Timestamp folder 2  
+│   │   │   └── items.json
+│   │   └── ... (more timestamp folders)
+│   ├── logs/
+│   └── reports/
+└── sync_session_2025-07-11_13-47-47/    # Previous session
+```
+
+### vs. Expected Simple Structure:
+```
+api_sync/data/raw_json/json_compiled/
+├── invoices.json
+├── items.json
+└── contacts.json
+```
+
+### Required Updates:
+1. **Session Discovery**: Find latest session folder
+2. **Multi-Timestamp Handling**: Search across timestamp folders within session
+3. **File Location Logic**: Module files scattered across different timestamp folders
+4. **Metadata Integration**: Use session_info.json for session selection
+5. **Fallback Mechanisms**: Handle both session-based and traditional structures
+
+### Data Consumer Guide Shows:
+- **Session-based**: Recommended new structure (what exists)
+- **Traditional**: Legacy support for `api_sync/data/raw_json/` (fallback)
+- **Module Discovery**: Files spread across multiple timestamp folders per session
+- **Session Metadata**: Health checks, freshness validation, success status
+
+### Impact on JSON2DB Sync:
+- Current config assumes simple file discovery
+- Need intelligent session and timestamp folder traversal
+- Must implement session selection logic (latest, successful, age-based)
+- File discovery becomes complex multi-directory search
+
+## Configuration System Next Steps:
+1. Update runner_json2db_sync.py to use configuration instead of hardcoded paths
+2. Update main_json2db_sync.py menu system with configuration options
+3. Preserve existing database table mapping system (user constraint)
+4. Test with actual API sync data structure
