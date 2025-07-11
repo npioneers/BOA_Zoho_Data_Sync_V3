@@ -298,48 +298,78 @@ data/
 4. **Session Summaries**: Automatic generation of sync result summaries
 5. **Session Listing**: Ability to list and analyze previous sync sessions
 
-### Using Session Folders
+## Data Consumption Guide
 
-#### With Session Folders (Default)
+**📋 For Developers, Data Analysts, and External Systems**
+
+The API Sync system provides organized, accessible data for downstream consumption. Here's how to access and consume the synced Zoho data:
+
+### 📁 Quick Access
+
+**Latest Data Location**: `api_sync/data/sync_sessions/` (session-based) or `api_sync/data/raw_json/` (traditional)
+
+**Quick Start Example**:
 ```python
-from api_sync.main_api_sync import ApiSyncWrapper
+from pathlib import Path
+import json
 
-wrapper = ApiSyncWrapper()
+# Get latest session data
+sessions_dir = Path("api_sync/data/sync_sessions")
+latest_session = sorted([f for f in sessions_dir.iterdir() if f.is_dir()], reverse=True)[0]
 
-# Sync with session folder organization (default)
-result = wrapper.fetch_data('contacts')
-print(f"Session folder: {result['sync_session']['session_folder']}")
+# Load specific module data
+def load_data(module_name):
+    raw_json_dir = latest_session / "raw_json"
+    for timestamp_dir in raw_json_dir.iterdir():
+        file_path = timestamp_dir / f"{module_name}.json"
+        if file_path.exists():
+            with open(file_path, 'r') as f:
+                return json.load(f)
+    return None
 
-# Sync all modules with session organization
-result = wrapper.fetch_all_modules()
+# Access your data
+invoices = load_data("invoices")
+contacts = load_data("contacts")
 ```
 
-#### Without Session Folders
-```python
-# Sync using traditional directory structure
-result = wrapper.fetch_data('contacts', use_session_folder=False)
+### 📊 Available Data Modules
 
-# This creates files directly in data/raw_json/TIMESTAMP/
+| Module | File Name | Has Line Items | Description |
+|--------|-----------|----------------|-------------|
+| **invoices** | `invoices.json` | ✅ | Customer invoices + `invoices_line_items.json` |
+| **bills** | `bills.json` | ✅ | Vendor bills + `bills_line_items.json` |
+| **salesorders** | `salesorders.json` | ✅ | Sales orders + line items |
+| **purchaseorders** | `purchaseorders.json` | ✅ | Purchase orders + line items |
+| **creditnotes** | `creditnotes.json` | ✅ | Credit notes + line items |
+| **items** | `items.json` | ❌ | Product/service catalog |
+| **contacts** | `contacts.json` | ❌ | Customer/vendor contacts |
+| **customerpayments** | `customerpayments.json` | ❌ | Payment receipts |
+| **vendorpayments** | `vendorpayments.json` | ❌ | Vendor payments |
+
+### 📖 Detailed Documentation
+
+- **[📚 DATA_CONSUMER_GUIDE.md](DATA_CONSUMER_GUIDE.md)**: Complete guide with code examples, best practices, and error handling
+- **[🚀 QUICK_REFERENCE.md](QUICK_REFERENCE.md)**: Quick reference card for immediate use
+
+### 🔗 Integration Examples
+
+```python
+# Check data freshness
+age_hours = (datetime.now() - session_timestamp).total_seconds() / 3600
+
+# Link invoices with line items
+def link_with_line_items(invoices, line_items):
+    for invoice in invoices:
+        invoice['line_items'] = [li for li in line_items if li['invoice_id'] == invoice['id']]
+    return invoices
+
+# Process in batches for large datasets
+def process_batches(data, batch_size=1000):
+    for i in range(0, len(data), batch_size):
+        yield data[i:i + batch_size]
 ```
 
-#### Managing Sessions
-```python
-# List all sync sessions
-sessions = wrapper.list_sync_sessions()
-for session in sessions:
-    print(f"Session: {session['session_timestamp']}")
-    print(f"Completed: {session['completed']}")
-    if 'summary' in session:
-        print(f"Records: {session['summary']['total_records']}")
-```
-
-### Session Benefits
-
-- **Organization**: Clear separation of different sync operations
-- **Traceability**: Complete audit trail of when and what was synced
-- **Debugging**: Isolated logs and reports for each sync operation
-- **Analysis**: Easy comparison between different sync sessions
-- **Cleanup**: Simple identification of old sessions for archival
+**For complete integration examples, patterns, and best practices, see [DATA_CONSUMER_GUIDE.md](DATA_CONSUMER_GUIDE.md)**
 
 ## Package Structure
 
