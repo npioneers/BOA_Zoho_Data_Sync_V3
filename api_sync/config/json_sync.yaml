@@ -1,0 +1,46 @@
+json_sync:
+  # Database Configuration
+  database_path: "data/database/production.db"
+  
+  # JSON Data Configuration
+  json_base_path: "data/raw_json"
+  json_path_pattern: "%Y-%m-%d_%H-%M-%S"
+  
+  # Sync Behavior Configuration
+  conflict_resolution: "json_wins"  # json_wins, db_wins, manual
+  dry_run: true
+  batch_size: 1000
+  max_retries: 3
+  timeout_seconds: 300
+  
+  # Entity Configuration
+  enabled_entities: null  # null = all entities, or list: ["invoices", "bills"]
+  entity_priority:
+    - "items"
+    - "contacts" 
+    - "invoices"
+    - "bills"
+    - "salesorders"
+    - "purchaseorders"
+    - "customerpayments"
+    - "vendorpayments"
+  
+  # Logging Configuration
+  log_level: "INFO"
+  log_file: null  # Set to path for file logging
+  verbose_logging: false
+  
+  # Performance Configuration
+  parallel_processing: false
+  max_workers: 4
+  memory_limit_mb: 512
+  
+  # Validation Configuration
+  validate_mappings: true
+  strict_validation: false
+  skip_invalid_records: true
+  
+  # Backup Configuration
+  backup_before_sync: true
+  backup_directory: "data/database/backups"
+  max_backups: 10

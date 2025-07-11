@@ -1,0 +1,25 @@
+# For making HTTP requests to Zoho API
+requests
+
+# For interacting with Google Cloud Secret Manager
+google-cloud-secret-manager
+
+# For loading local environment variables (for GCP project ID)
+python-dotenv
+
+# For reading the .toml configuration file
+toml
+
+# Project Bedrock V2 - Additional Dependencies
+# For data transformation and analysis
+pandas>=1.5.0
+
+# For YAML configuration file support
+PyYAML>=6.0
+
+# For database operations
+sqlite3
+
+# For beautiful table formatting in verification output
+tabulate>=0.9.0
+sqlite3  # Built into Python, no installation needed
