@@ -65,34 +65,291 @@ class ApiSyncWrapper:
             print(f"⚠️  Runner initialization failed: {e}")
             self.runner = None
     
-    def get_status(self):
-        """Get system status."""
-        if self.runner:
-            return self.runner.get_status()
-        else:
-            return {
-                "error": "Runner not initialized",
-                "credentials": False,
-                "latest_sync": None
+    def _create_sync_session_folder(self, base_dir="data/sync_sessions"):
+        """
+        Create a timestamped sync session folder to organize all sync outputs.
+        
+        Args:
+            base_dir: Base directory for sync sessions
+            
+        Returns:
+            tuple: (session_timestamp, session_folder_path)
+        """
+        session_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        session_folder = Path(base_dir) / f"sync_session_{session_timestamp}"
+        
+        try:
+            session_folder.mkdir(parents=True, exist_ok=True)
+            
+            # Create subdirectories for organization
+            (session_folder / "raw_json").mkdir(exist_ok=True)
+            (session_folder / "logs").mkdir(exist_ok=True)
+            (session_folder / "reports").mkdir(exist_ok=True)
+            
+            # Create session info file
+            session_info = {
+                "session_timestamp": session_timestamp,
+                "session_start": datetime.now().isoformat(),
+                "session_folder": str(session_folder),
+                "subdirectories": {
+                    "raw_json": "Raw JSON data from API",
+                    "logs": "Sync operation logs",
+                    "reports": "Verification and summary reports"
+                }
             }
+            
+            import json
+            with open(session_folder / "session_info.json", 'w') as f:
+                json.dump(session_info, f, indent=2)
+            
+            # Create README for the session
+            self._create_session_readme(session_folder, session_timestamp)
+            
+            logger.info(f"Created sync session folder: {session_folder}")
+            return session_timestamp, str(session_folder)
+        except OSError as e:
+            logger.error(f"Failed to create sync session folder: {e}")
+            return session_timestamp, None
     
-    def get_sync_history(self):
-        """Get sync history."""
-        if self.runner:
-            return self.runner.get_sync_history()
-        else:
+    def _create_session_summary(self, session_folder, sync_results):
+        """
+        Create a summary report for the sync session.
+        
+        Args:
+            session_folder: Path to the session folder
+            sync_results: Results from the sync operation
+        """
+        try:
+            summary = {
+                "session_completed": datetime.now().isoformat(),
+                "sync_results": sync_results,
+                "summary": {
+                    "total_modules": 0,
+                    "successful_modules": 0,
+                    "failed_modules": 0,
+                    "total_records": 0
+                }
+            }
+            
+            # Calculate summary statistics
+            if isinstance(sync_results, dict) and "modules" in sync_results:
+                modules_data = sync_results["modules"]
+                summary["summary"]["total_modules"] = len(modules_data)
+                
+                for module_result in modules_data.values():
+                    if isinstance(module_result, dict):
+                        if module_result.get("success", False):
+                            summary["summary"]["successful_modules"] += 1
+                            summary["summary"]["total_records"] += module_result.get("record_count", 0)
+                        else:
+                            summary["summary"]["failed_modules"] += 1
+            
+            # Save summary file
+            import json
+            summary_file = Path(session_folder) / "reports" / "session_summary.json"
+            with open(summary_file, 'w') as f:
+                json.dump(summary, f, indent=2)
+                
+            logger.info(f"Created session summary: {summary_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to create session summary: {e}")
+    
+    def _create_session_readme(self, session_folder, session_timestamp):
+        """
+        Create a README file for the sync session.
+        
+        Args:
+            session_folder: Path to the session folder
+            session_timestamp: Timestamp of the session
+        """
+        try:
+            readme_content = f"""# Sync Session: {session_timestamp}
+
+This folder contains all files generated during the sync session that started at {session_timestamp}.
+
+## Folder Structure
+
+- **raw_json/**: Contains the raw JSON data fetched from Zoho API, organized by timestamp directories
+- **logs/**: Contains log files from the sync operation
+- **reports/**: Contains summary reports and verification results
+
+## Files
+
+- **session_info.json**: Metadata about this sync session
+- **session_summary.json**: Summary of sync results (created after completion)
+
+## Usage
+
+The raw JSON files in the `raw_json/` directory can be used for:
+- Data analysis
+- Re-processing through the data pipeline
+- Backup and recovery
+- Verification against database records
+
+## Timestamps
+
+All timestamps are in the format: YYYY-MM-DD_HH-MM-SS
+Individual module sync operations create subdirectories with their own timestamps within the raw_json folder.
+"""
+            
+            readme_file = Path(session_folder) / "README.md"
+            with open(readme_file, 'w') as f:
+                f.write(readme_content)
+                
+            logger.info(f"Created session README: {readme_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to create session README: {e}")
+    
+    def list_sync_sessions(self, base_dir="data/sync_sessions"):
+        """
+        List all available sync sessions.
+        
+        Args:
+            base_dir: Base directory for sync sessions
+            
+        Returns:
+            List of session info dictionaries
+        """
+        try:
+            sessions = []
+            base_path = Path(base_dir)
+            
+            if not base_path.exists():
+                return []
+            
+            for session_dir in base_path.iterdir():
+                if session_dir.is_dir() and session_dir.name.startswith("sync_session_"):
+                    session_info_file = session_dir / "session_info.json"
+                    session_summary_file = session_dir / "reports" / "session_summary.json"
+                    
+                    session_info = {"session_folder": str(session_dir)}
+                    
+                    # Load session info if available
+                    if session_info_file.exists():
+                        try:
+                            import json
+                            with open(session_info_file, 'r') as f:
+                                session_info.update(json.load(f))
+                        except:
+                            pass
+                    
+                    # Load session summary if available
+                    if session_summary_file.exists():
+                        try:
+                            import json
+                            with open(session_summary_file, 'r') as f:
+                                summary_data = json.load(f)
+                                session_info["summary"] = summary_data.get("summary", {})
+                                session_info["completed"] = True
+                        except:
+                            pass
+                    else:
+                        session_info["completed"] = False
+                    
+                    sessions.append(session_info)
+            
+            # Sort by timestamp (newest first)
+            sessions.sort(key=lambda x: x.get("session_timestamp", ""), reverse=True)
+            return sessions
+            
+        except Exception as e:
+            logger.error(f"Failed to list sync sessions: {e}")
             return []
     
-    def fetch_data(self, module, full_sync=False, since_timestamp=None):
-        """Fetch data for a module (incremental by default)."""
+    def fetch_data(self, module, full_sync=False, since_timestamp=None, use_session_folder=True):
+        """
+        Fetch data for a module with optional session folder organization.
+        
+        Args:
+            module: Module name to fetch
+            full_sync: Whether to perform full sync
+            since_timestamp: Timestamp to sync from
+            use_session_folder: Whether to organize output in a session folder
+        """
         try:
+            if use_session_folder:
+                # Create session folder for this sync operation
+                session_timestamp, session_folder = self._create_sync_session_folder()
+                if session_folder:
+                    # Create subdirectory for raw JSON within session folder
+                    json_output_dir = Path(session_folder) / "raw_json"
+                    json_output_dir.mkdir(exist_ok=True)
+                    
+                    # Call runner with custom output directory
+                    result = self.runner.fetch_data(
+                        module, 
+                        full_sync=full_sync, 
+                        since_timestamp=since_timestamp,
+                        output_dir=str(json_output_dir)
+                    )
+                    
+                    # Add session info to result
+                    if isinstance(result, dict):
+                        result["sync_session"] = {
+                            "session_timestamp": session_timestamp,
+                            "session_folder": session_folder,
+                            "json_output_dir": str(json_output_dir)
+                        }
+                        
+                        # Create session summary for single module
+                        self._create_session_summary(session_folder, result)
+                    
+                    return result
+                else:
+                    # Fallback to default behavior if session folder creation failed
+                    logger.warning("Session folder creation failed, using default output")
+            
+            # Default behavior without session folder
             return self.runner.fetch_data(module, full_sync=full_sync, since_timestamp=since_timestamp)
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def fetch_all_modules(self, full_sync=False, include_excluded=False, since_timestamp=None):
-        """Fetch data for all configured modules (incremental by default, config-driven filtering)."""
+    def fetch_all_modules(self, full_sync=False, include_excluded=False, since_timestamp=None, use_session_folder=True):
+        """
+        Fetch data for all configured modules with optional session folder organization.
+        
+        Args:
+            full_sync: Whether to perform full sync
+            include_excluded: Whether to include excluded modules
+            since_timestamp: Timestamp to sync from
+            use_session_folder: Whether to organize output in a session folder
+        """
         try:
+            if use_session_folder:
+                # Create session folder for this sync operation
+                session_timestamp, session_folder = self._create_sync_session_folder()
+                if session_folder:
+                    # Create subdirectory for raw JSON within session folder
+                    json_output_dir = Path(session_folder) / "raw_json"
+                    json_output_dir.mkdir(exist_ok=True)
+                    
+                    # Call runner with custom output directory
+                    result = self.runner.fetch_all_modules(
+                        full_sync=full_sync,
+                        include_excluded=include_excluded,
+                        since_timestamp=since_timestamp,
+                        output_dir=str(json_output_dir)
+                    )
+                    
+                    # Add session info to result
+                    if isinstance(result, dict):
+                        result["sync_session"] = {
+                            "session_timestamp": session_timestamp,
+                            "session_folder": session_folder,
+                            "json_output_dir": str(json_output_dir)
+                        }
+                        
+                        # Create session summary for all modules
+                        self._create_session_summary(session_folder, result)
+                    
+                    return result
+                else:
+                    # Fallback to default behavior if session folder creation failed
+                    logger.warning("Session folder creation failed, using default output")
+            
+            # Default behavior without session folder
             return self.runner.fetch_all_modules(
                 full_sync=full_sync, 
                 include_excluded=include_excluded,
@@ -101,25 +358,207 @@ class ApiSyncWrapper:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def verify_data(self, quick=True):
-        """Verify data completeness using quick local verification."""
-        if self.runner:
-            return self.runner.quick_local_verification()
-        else:
+    def quick_verify_sync_data(self):
+        """
+        Quick verification and analysis of sync data with comprehensive table report.
+        
+        Returns detailed information about synced modules including:
+        - Module names (including line items)
+        - Date ranges (earliest to latest modified)
+        - Record counts
+        - Session folder organization
+        """
+        try:
+            # Check both traditional and session folder structures
+            report_data = self._analyze_sync_data()
+            
+            if not report_data:
+                return {
+                    "success": False,
+                    "error": "No sync data found"
+                }
+            
+            return {
+                "success": True,
+                "report": report_data,
+                "summary": self._generate_sync_summary(report_data)
+            }
+            
+        except Exception as e:
             return {
                 "success": False,
-                "error": "Runner not initialized - check credentials"
+                "error": str(e)
             }
     
-    def quick_local_verification(self):
-        """Quick local verification without API calls."""
-        if self.runner:
-            return self.runner.quick_local_verification()
-        else:
+    def _analyze_sync_data(self):
+        """Analyze sync data from both traditional and session folder structures."""
+        report_data = []
+        
+        # Check session folders first (newest structure)
+        session_data = self._analyze_session_folders()
+        if session_data:
+            report_data.extend(session_data)
+        
+        # Check traditional structure if no session data or to supplement
+        traditional_data = self._analyze_traditional_structure()
+        if traditional_data:
+            report_data.extend(traditional_data)
+        
+        # Remove duplicates and sort by module name
+        unique_data = {}
+        for item in report_data:
+            key = f"{item['module_name']}_{item.get('data_source', 'unknown')}"
+            if key not in unique_data or item.get('last_sync', '') > unique_data[key].get('last_sync', ''):
+                unique_data[key] = item
+        
+        return list(unique_data.values())
+    
+    def _analyze_session_folders(self):
+        """Analyze data from session folders."""
+        session_data = []
+        sessions = self.list_sync_sessions()
+        
+        for session in sessions[:5]:  # Analyze last 5 sessions
+            session_folder = Path(session.get('session_folder', ''))
+            if not session_folder.exists():
+                continue
+                
+            raw_json_path = session_folder / "raw_json"
+            if not raw_json_path.exists():
+                continue
+            
+            # Analyze each timestamp directory in the session
+            for timestamp_dir in raw_json_path.iterdir():
+                if timestamp_dir.is_dir() and self._is_timestamp_dir(timestamp_dir.name):
+                    modules_data = self._analyze_timestamp_directory(timestamp_dir, f"Session: {session.get('session_timestamp', 'Unknown')}")
+                    session_data.extend(modules_data)
+        
+        return session_data
+    
+    def _analyze_traditional_structure(self):
+        """Analyze data from traditional data/raw_json structure."""
+        traditional_data = []
+        data_path = Path("data/raw_json")
+        
+        if not data_path.exists():
+            return traditional_data
+        
+        # Analyze timestamp directories
+        for timestamp_dir in data_path.iterdir():
+            if timestamp_dir.is_dir() and self._is_timestamp_dir(timestamp_dir.name):
+                modules_data = self._analyze_timestamp_directory(timestamp_dir, "Traditional")
+                traditional_data.extend(modules_data)
+        
+        return traditional_data
+    
+    def _analyze_timestamp_directory(self, timestamp_dir, data_source):
+        """Analyze JSON files in a timestamp directory."""
+        modules_data = []
+        
+        for json_file in timestamp_dir.glob("*.json"):
+            try:
+                module_name = json_file.stem
+                
+                # Load and analyze the JSON data
+                import json
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                if not isinstance(data, list) or not data:
+                    continue
+                
+                # Extract date information
+                date_info = self._extract_date_range(data)
+                
+                module_info = {
+                    "module_name": module_name,
+                    "record_count": len(data),
+                    "earliest_date": date_info.get("earliest"),
+                    "latest_date": date_info.get("latest"),
+                    "last_sync": timestamp_dir.name,
+                    "data_source": data_source,
+                    "file_path": str(json_file)
+                }
+                
+                modules_data.append(module_info)
+                
+            except Exception as e:
+                logger.warning(f"Error analyzing {json_file}: {e}")
+                continue
+        
+        return modules_data
+    
+    def _extract_date_range(self, data):
+        """Extract earliest and latest dates from JSON data."""
+        dates = []
+        
+        # Common date fields to check
+        date_fields = [
+            'last_modified_time', 'modified_time', 'created_time', 'date',
+            'invoice_date', 'bill_date', 'salesorder_date', 'purchaseorder_date',
+            'creditnote_date', 'payment_date'
+        ]
+        
+        for record in data:
+            if not isinstance(record, dict):
+                continue
+                
+            for field in date_fields:
+                if field in record and record[field]:
+                    try:
+                        # Parse various date formats
+                        date_str = record[field]
+                        if isinstance(date_str, str):
+                            # Handle ISO format and other common formats
+                            if 'T' in date_str:
+                                # Parse datetime with timezone awareness
+                                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                # Convert to naive datetime for comparison
+                                if date_obj.tzinfo is not None:
+                                    date_obj = date_obj.replace(tzinfo=None)
+                            else:
+                                # Parse date-only format
+                                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                            dates.append(date_obj)
+                    except Exception as e:
+                        # Skip invalid dates silently
+                        continue
+        
+        if dates:
+            earliest = min(dates)
+            latest = max(dates)
             return {
-                "success": False,
-                "error": "Runner not initialized - check credentials"
+                "earliest": earliest.strftime('%Y-%m-%d'),
+                "latest": latest.strftime('%Y-%m-%d')
             }
+        
+        return {"earliest": "No dates", "latest": "No dates"}
+    
+    def _is_timestamp_dir(self, dirname):
+        """Check if directory name matches timestamp format."""
+        import re
+        pattern = r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$"
+        return bool(re.match(pattern, dirname))
+    
+    def _generate_sync_summary(self, report_data):
+        """Generate summary statistics from report data."""
+        if not report_data:
+            return {}
+        
+        total_records = sum(item.get('record_count', 0) for item in report_data)
+        unique_modules = len(set(item['module_name'] for item in report_data))
+        
+        # Separate regular modules from line items
+        regular_modules = [item for item in report_data if not item['module_name'].endswith('_line_items')]
+        line_item_modules = [item for item in report_data if item['module_name'].endswith('_line_items')]
+        
+        return {
+            "total_records": total_records,
+            "unique_modules": unique_modules,
+            "regular_modules_count": len(regular_modules),
+            "line_item_modules_count": len(line_item_modules),
+            "last_sync": max((item.get('last_sync', '') for item in report_data), default='Unknown')
+        }
 
 
 def test_wrapper_functionality():
@@ -362,15 +801,12 @@ def interactive_menu():
         while True:
             print("\nAvailable Options:")
             print("1. Fetch Data")
-            print("2. Verify Data")
-            print("3. Quick Local Analysis")
-            print("4. Show Status")
-            print("5. Show Sync History")
-            print("6. Run Tests")
-            print("7. Exit")
+            print("2. Quick Verify Sync Data")
+            print("3. List Sync Sessions")
+            print("4. Exit")
             
             try:
-                choice = input("\nEnter your choice (1-7): ").strip()
+                choice = input("\nEnter your choice (1-4): ").strip()
             except (EOFError, KeyboardInterrupt):
                 print("\n\n👋 Goodbye!")
                 sys.exit(0)
@@ -525,107 +961,98 @@ def interactive_menu():
                     print("❌ Invalid choice. Please select a, b, or c.")
             
             elif choice == "2":
-                print("\n🔍 Quick Local Data Verification...")
+                print("\n� Quick Verify Sync Data - Comprehensive Analysis...")
                 try:
-                    result = wrapper.verify_data()
+                    result = wrapper.quick_verify_sync_data()
                     if result.get('success'):
-                        print("✅ Local verification completed")
-                        
-                        # Show detailed results
-                        directory = result.get('directory')
-                        modules = result.get('modules', {})
+                        report_data = result.get('report', [])
                         summary = result.get('summary', {})
                         
-                        print(f"\n📁 Analyzing directory: {directory}")
-                        print("\n📊 Module Analysis:")
-                        print("=" * 100)
-                        print(f"{'Module':<25} {'Records':<10} {'Date Range'}")
-                        print("-" * 100)
+                        if not report_data:
+                            print("❌ No sync data found")
+                            continue
                         
-                        # Regular modules first
+                        print("✅ Sync data analysis completed")
+                        print("\n📊 SYNC DATA ANALYSIS REPORT")
+                        print("=" * 120)
+                        print(f"{'Module Name':<25} {'Data Source':<15} {'Records':<10} {'Earliest Date':<15} {'Latest Date':<15} {'Last Sync':<20}")
+                        print("-" * 120)
+                        
+                        # Separate regular modules from line items
                         regular_modules = []
                         line_item_modules = []
                         
-                        for module_name, data in modules.items():
-                            if isinstance(data, dict) and 'error' not in data:
-                                if "_line_items" in module_name:
-                                    line_item_modules.append((module_name, data))
-                                else:
-                                    regular_modules.append((module_name, data))
+                        for item in report_data:
+                            if item['module_name'].endswith('_line_items'):
+                                line_item_modules.append(item)
+                            else:
+                                regular_modules.append(item)
                         
-                        # Display regular modules
-                        for module_name, data in sorted(regular_modules):
-                            count = data.get("total_records", 0)
-                            date_range = data.get("date_range", "No dates found")
-                            module_display = module_name.replace('_', ' ').title()
-                            print(f"{module_display:<25} {count:<10} {date_range}")
+                        # Display regular modules first
+                        if regular_modules:
+                            print("📋 MAIN MODULES:")
+                            for item in sorted(regular_modules, key=lambda x: x['module_name']):
+                                module_display = item['module_name'].replace('_', ' ').title()
+                                data_source = item.get('data_source', 'Unknown')[:14]
+                                record_count = item.get('record_count', 0)
+                                earliest = item.get('earliest_date', 'No dates')[:14]
+                                latest = item.get('latest_date', 'No dates')[:14]
+                                last_sync = item.get('last_sync', 'Unknown')[:19]
+                                
+                                print(f"{module_display:<25} {data_source:<15} {record_count:<10} {earliest:<15} {latest:<15} {last_sync:<20}")
                         
+                        # Display line item modules
                         if line_item_modules:
-                            print("\n📋 Line Items:")
-                            print("-" * 50)
-                            for module_name, data in sorted(line_item_modules):
-                                count = data.get("total_records", 0)
-                                date_range = data.get("date_range", "No dates found")
-                                base_module = module_name.replace("_line_items", "").replace('_', ' ').title()
-                                print(f"{base_module} line items: {count} records")
-                                if date_range != "No dates found":
-                                    print(f"  Date range: {date_range}")
+                            print("\n📝 LINE ITEM MODULES:")
+                            for item in sorted(line_item_modules, key=lambda x: x['module_name']):
+                                module_display = item['module_name'].replace('_line_items', '').replace('_', ' ').title() + " (Line Items)"
+                                data_source = item.get('data_source', 'Unknown')[:14]
+                                record_count = item.get('record_count', 0)
+                                earliest = item.get('earliest_date', 'No dates')[:14]
+                                latest = item.get('latest_date', 'No dates')[:14]
+                                last_sync = item.get('last_sync', 'Unknown')[:19]
+                                
+                                print(f"{module_display:<25} {data_source:<15} {record_count:<10} {earliest:<15} {latest:<15} {last_sync:<20}")
                         
-                        # Show summary
-                        print("\n📈 Summary:")
-                        print("-" * 30)
-                        total_header = summary.get('total_header_records', 0)
-                        total_line_items = summary.get('total_line_items', 0)
-                        total_records = summary.get('total_records', 0)
-                        regular_count = summary.get('regular_modules_count', 0)
-                        overall_range = summary.get('overall_date_range')
+                        # Display summary
+                        print("\n📈 SUMMARY:")
+                        print("-" * 50)
+                        print(f"Total Records: {summary.get('total_records', 0):,}")
+                        print(f"Unique Modules: {summary.get('unique_modules', 0)}")
+                        print(f"Regular Modules: {summary.get('regular_modules_count', 0)}")
+                        print(f"Line Item Modules: {summary.get('line_item_modules_count', 0)}")
+                        print(f"Last Sync: {summary.get('last_sync', 'Unknown')}")
                         
-                        print(f"Header records: {total_header}")
-                        print(f"Line items: {total_line_items}")
-                        print(f"Total records: {total_records}")
-                        print(f"Regular modules: {regular_count}")
-                        if overall_range:
-                            print(f"Overall date range: {overall_range}")
-                            
                     else:
-                        print(f"❌ Verification failed: {result.get('error', 'Unknown error')}")
+                        print(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
                 except Exception as e:
-                    print(f"❌ Error: {e}")
+                    print(f"❌ Error during analysis: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             elif choice == "3":
-                print("\n📋 System Status:")
+                print("\n📁 Sync Sessions:")
                 try:
-                    status = wrapper.get_status()
-                    for key, value in status.items():
-                        print(f"  {key}: {value}")
+                    sessions = wrapper.list_sync_sessions()
+                    if sessions:
+                        print(f"\nFound {len(sessions)} sync sessions:")
+                        print("-" * 80)
+                        for i, session in enumerate(sessions[:10], 1):  # Show last 10
+                            timestamp = session.get('session_timestamp', 'Unknown')
+                            folder = session.get('session_folder', 'Unknown')
+                            print(f"{i:2d}. {timestamp}")
+                            print(f"    📁 {folder}")
+                    else:
+                        print("No sync sessions found")
                 except Exception as e:
-                    print(f"❌ Error getting status: {e}")
+                    print(f"❌ Error listing sessions: {e}")
             
             elif choice == "4":
-                print("\n📈 Sync History:")
-                try:
-                    history = wrapper.get_sync_history()
-                    if history:
-                        for entry in history[:5]:  # Show last 5 entries
-                            timestamp = entry.get('timestamp', 'Unknown')
-                            modules = entry.get('modules', [])
-                            print(f"  {timestamp} - {len(modules)} modules")
-                    else:
-                        print("  No sync history found")
-                except Exception as e:
-                    print(f"❌ Error getting history: {e}")
-            
-            elif choice == "5":
-                print("\n🧪 Running wrapper tests...")
-                test_wrapper_functionality()
-                input("\nPress Enter to continue...")
-            
-            elif choice == "6":
                 print("\n👋 Goodbye!")
                 break
             
             else:
-                print("❌ Invalid choice. Please enter 1-6.")
+                print("❌ Invalid choice. Please enter 1-4.")
     
     except Exception as e:
         print(f"❌ Failed to initialize: {e}")

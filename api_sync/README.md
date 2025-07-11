@@ -9,10 +9,60 @@ The API Sync package provides a comprehensive solution for fetching, storing, an
 - **OAuth Authentication**: Secure authentication with the Zoho Books API using OAuth 2.0
 - **GCP Secret Management**: Integration with Google Cloud Platform Secret Manager for secure credential storage
 - **Incremental Data Fetching**: Smart fetching of only new or modified data since last sync
+- **Session Folder Organization**: Automatic creation of timestamped sync session folders for organized data storage
+- **Comprehensive Reporting**: Session summaries, logs, and verification reports
 - **Verification**: Data completeness verification between API and local data
 - **Modular Design**: Well-structured codebase for maintainability and extensibility
 - **Robust Error Handling**: Comprehensive error handling and retry logic for network issues
 - **Detailed Logging**: Configurable logging levels for debugging and monitoring
+
+## Key Features Added
+
+### Timestamped Session Folders
+Each sync operation creates a unique folder like `sync_session_2025-07-11_13-03-15` for better organization and traceability.
+
+### Organized Folder Structure
+```
+sync_session_TIMESTAMP/
+├── README.md                    # Auto-generated documentation
+├── session_info.json          # Session metadata
+├── raw_json/                   # Raw API data in timestamped subdirs
+│   ├── 2025-07-11_13-03-15/   # Individual module sync timestamps
+│   ├── 2025-07-11_13-03-27/
+│   └── ...
+├── logs/                       # Reserved for sync logs
+└── reports/                    # Summary and verification reports
+    └── session_summary.json   # Comprehensive sync results
+```
+
+### Enhanced API Methods
+- `fetch_data()` with `use_session_folder=True` (default)
+- `fetch_all_modules()` with session organization
+- `list_sync_sessions()` for managing previous sessions
+
+### Automatic Documentation
+- Session README files explaining folder contents
+- Session info metadata with timestamps
+- Comprehensive summary reports with statistics
+
+### Backward Compatibility
+- Option to disable session folders with `use_session_folder=False`
+- Maintains traditional `data/raw_json/` structure when disabled
+
+### Benefits
+- **Better Organization**: Clear separation of different sync operations
+- **Traceability**: Complete audit trail of sync sessions
+- **Easy Management**: Simple identification and cleanup of old sessions
+- **Comprehensive Reporting**: Detailed statistics per session
+- **Self-Documenting**: Auto-generated documentation for each session
+
+### Files Modified/Created
+- **Enhanced** `main_api_sync.py` - Added session folder functionality
+- **Updated** `README.md` - Added documentation for new features
+- **Created** `test_session_folders.py` - Test script for functionality
+- **Created** `example_session_folders.py` - Usage examples
+
+The system now automatically creates organized, timestamped folders for each sync operation, making data management much cleaner and more professional! 🎉
 
 ## Supported Modules
 
@@ -215,6 +265,81 @@ The JSON data is stored locally in the following structure:
 - **Speed**: Reduces processing time for subsequent syncs
 - **API Quota Management**: Helps stay within API rate limits
 - **Historical Data Preservation**: Maintains a historical record of each sync in separate directories
+
+## Session Folder Organization
+
+The api_sync package now supports automatic organization of sync operations into timestamped session folders for better data management and traceability.
+
+### Session Folder Structure
+
+When using the enhanced `ApiSyncWrapper` with session folders enabled (default), each sync operation creates a dedicated session folder:
+
+```
+data/
+└── sync_sessions/
+    └── sync_session_2025-07-11_13-01-06/
+        ├── README.md                    # Session documentation
+        ├── session_info.json          # Session metadata
+        ├── raw_json/                   # Raw API data (timestamped subdirs)
+        │   └── 2025-07-11_13-01-06/
+        │       ├── invoices.json
+        │       ├── bills.json
+        │       └── contacts.json
+        ├── logs/                       # Sync operation logs
+        └── reports/                    # Summary and verification reports
+            └── session_summary.json   # Session completion summary
+```
+
+### Session Features
+
+1. **Automatic Organization**: Each sync creates a unique session folder with timestamp
+2. **Comprehensive Documentation**: README and metadata files explain the session contents
+3. **Structured Storage**: Organized subdirectories for different types of output
+4. **Session Summaries**: Automatic generation of sync result summaries
+5. **Session Listing**: Ability to list and analyze previous sync sessions
+
+### Using Session Folders
+
+#### With Session Folders (Default)
+```python
+from api_sync.main_api_sync import ApiSyncWrapper
+
+wrapper = ApiSyncWrapper()
+
+# Sync with session folder organization (default)
+result = wrapper.fetch_data('contacts')
+print(f"Session folder: {result['sync_session']['session_folder']}")
+
+# Sync all modules with session organization
+result = wrapper.fetch_all_modules()
+```
+
+#### Without Session Folders
+```python
+# Sync using traditional directory structure
+result = wrapper.fetch_data('contacts', use_session_folder=False)
+
+# This creates files directly in data/raw_json/TIMESTAMP/
+```
+
+#### Managing Sessions
+```python
+# List all sync sessions
+sessions = wrapper.list_sync_sessions()
+for session in sessions:
+    print(f"Session: {session['session_timestamp']}")
+    print(f"Completed: {session['completed']}")
+    if 'summary' in session:
+        print(f"Records: {session['summary']['total_records']}")
+```
+
+### Session Benefits
+
+- **Organization**: Clear separation of different sync operations
+- **Traceability**: Complete audit trail of when and what was synced
+- **Debugging**: Isolated logs and reports for each sync operation
+- **Analysis**: Easy comparison between different sync sessions
+- **Cleanup**: Simple identification of old sessions for archival
 
 ## Package Structure
 
