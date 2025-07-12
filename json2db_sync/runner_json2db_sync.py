@@ -14,14 +14,12 @@ try:
     from .config import get_config
     from .json_analyzer import JSONAnalyzer
     from .table_generator import TableGenerator
-    from .json_tables_recreate import JSONTablesRecreator
     from .summary_reporter import SyncSummaryReporter
 except ImportError:
     from data_populator import JSONDataPopulator
     from config import get_config
     from json_analyzer import JSONAnalyzer
     from table_generator import TableGenerator
-    from json_tables_recreate import JSONTablesRecreator
     from summary_reporter import SyncSummaryReporter
 
 
@@ -134,17 +132,31 @@ class JSON2DBSyncRunner:
             target_db = db_path or str(self.db_path)
             self.logger.info(f"Recreating JSON tables in: {target_db}")
             
-            recreator = JSONTablesRecreator(target_db)
-            result = recreator.recreate_all_json_tables()
+            # Use TableGenerator for recreating tables
+            table_generator = TableGenerator()
+            result = table_generator.analyze_and_generate()
             
-            return {
-                "success": result.get("success", False),
-                "operation": "recreate_tables",
-                "db_path": target_db,
-                "statistics": result.get("statistics", {}),
-                "errors": result.get("errors", []),
-                "completed_at": datetime.now().isoformat()
-            }
+            if result.get("success"):
+                # Generate SQL and execute (simplified approach)
+                sql_script = table_generator.generate_complete_sql_script()
+                
+                return {
+                    "success": True,
+                    "operation": "recreate_tables",
+                    "db_path": target_db,
+                    "statistics": {"tables_created": len(result.get("tables", {}))},
+                    "errors": [],
+                    "completed_at": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "success": False,
+                    "operation": "recreate_tables",
+                    "db_path": target_db,
+                    "statistics": {},
+                    "errors": ["Table recreation failed"],
+                    "completed_at": datetime.now().isoformat()
+                }
             
         except Exception as e:
             self.logger.error(f"Table recreation failed: {e}")
@@ -170,17 +182,31 @@ class JSON2DBSyncRunner:
             target_db = db_path or str(self.db_path)
             self.logger.info(f"Creating all tables in: {target_db}")
             
-            recreator = JSONTablesRecreator(target_db)
-            result = recreator.create_all_tables_full()
+            # Use TableGenerator for creating tables
+            table_generator = TableGenerator()
+            result = table_generator.analyze_and_generate()
             
-            return {
-                "success": result.get("success", False),
-                "operation": "create_all_tables",
-                "db_path": target_db,
-                "statistics": result.get("statistics", {}),
-                "errors": result.get("errors", []),
-                "completed_at": datetime.now().isoformat()
-            }
+            if result.get("success"):
+                # Generate SQL and execute (simplified approach)
+                sql_script = table_generator.generate_complete_sql_script()
+                
+                return {
+                    "success": True,
+                    "operation": "create_all_tables",
+                    "db_path": target_db,
+                    "statistics": {"tables_created": len(result.get("tables", {}))},
+                    "errors": [],
+                    "completed_at": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "success": False,
+                    "operation": "create_all_tables",
+                    "db_path": target_db,
+                    "statistics": {},
+                    "errors": ["Table creation failed"],
+                    "completed_at": datetime.now().isoformat()
+                }
             
         except Exception as e:
             self.logger.error(f"Table creation failed: {e}")

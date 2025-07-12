@@ -16,10 +16,53 @@ try:
 except ImportError:
     from json_analyzer import JSONAnalyzer
 
-try:
-    from .enhanced_duplicate_prevention import DuplicatePreventionManager
-except ImportError:
-    from enhanced_duplicate_prevention import DuplicatePreventionManager
+
+class SimpleDuplicatePreventionManager:
+    """Simplified duplicate prevention manager built into data populator"""
+    
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.processed_sessions = set()
+        self.processed_files = set()
+        
+    def is_session_processed(self, session_id: str, session_path: str) -> bool:
+        """Check if session was already processed"""
+        return session_id in self.processed_sessions
+        
+    def start_session_processing(self, session_id: str, session_path: str) -> bool:
+        """Mark session as being processed"""
+        if session_id in self.processed_sessions:
+            return False
+        self.processed_sessions.add(session_id)
+        return True
+        
+    def is_file_processed(self, table_name: str, file_path: str, session_id: str) -> bool:
+        """Check if file was already processed"""
+        file_key = f"{session_id}:{table_name}:{file_path}"
+        return file_key in self.processed_files
+        
+    def track_file_processing(self, table_name: str, file_path: str, session_id: str, 
+                             record_count: int, file_size: int):
+        """Track file processing"""
+        file_key = f"{session_id}:{table_name}:{file_path}"
+        self.processed_files.add(file_key)
+        
+    def complete_session_processing(self, session_id: str, total_records: int, 
+                                  processed_modules: list):
+        """Mark session as completed"""
+        pass
+        
+    def fail_session_processing(self, session_id: str, error_message: str):
+        """Mark session as failed"""
+        if session_id in self.processed_sessions:
+            self.processed_sessions.remove(session_id)
+            
+    def get_processing_stats(self) -> dict:
+        """Get processing statistics"""
+        return {
+            "sessions_processed": len(self.processed_sessions),
+            "files_processed": len(self.processed_files)
+        }
 
 
 class JSONDataPopulator:
@@ -93,7 +136,7 @@ class JSONDataPopulator:
 
         # Initialize duplicate prevention manager
         try:
-            self.duplicate_manager = DuplicatePreventionManager(str(self.db_path))
+            self.duplicate_manager = SimpleDuplicatePreventionManager(str(self.db_path))
         except Exception as e:
             print(f"⚠️ Warning: Could not initialize duplicate prevention: {e}")
             self.duplicate_manager = None
