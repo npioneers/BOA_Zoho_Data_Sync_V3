@@ -195,7 +195,7 @@ class JSON2DBConfig:
         return self._config["session"]
     
     def get_latest_session_folder(self) -> Optional[str]:
-        """Get the latest session folder from the sync_sessions directory"""
+        """Get the latest session folder that contains actual data files (not just metadata)"""
         try:
             sync_sessions_path = Path(self.get_api_sync_path())
             if not sync_sessions_path.exists():
@@ -210,13 +210,41 @@ class JSON2DBConfig:
             if not session_folders:
                 return None
             
-            # Sort by creation time (newest first) and return the latest
-            latest_session = max(session_folders, key=lambda x: x.stat().st_mtime)
-            return str(latest_session)
+            # Sort by creation time (newest first) and find the latest with actual data
+            sorted_sessions = sorted(session_folders, key=lambda x: x.stat().st_mtime, reverse=True)
+            
+            for session_folder in sorted_sessions:
+                # Check if this session has actual data files (not just metadata)
+                if self._session_has_data_files(session_folder):
+                    return str(session_folder)
+            
+            # If no session with data found, return the newest session anyway
+            # (fallback behavior)
+            return str(sorted_sessions[0]) if sorted_sessions else None
             
         except Exception as e:
             print(f"Warning: Could not determine latest session folder: {e}")
             return None
+    
+    def _session_has_data_files(self, session_folder: Path) -> bool:
+        """Check if a session folder contains actual data files (not just metadata)"""
+        try:
+            raw_json_path = session_folder / "raw_json"
+            if not raw_json_path.exists():
+                return False
+            
+            # Check all timestamp directories for actual data files
+            for timestamp_dir in raw_json_path.iterdir():
+                if timestamp_dir.is_dir():
+                    for json_file in timestamp_dir.glob("*.json"):
+                        # If we find any non-metadata JSON file, this session has data
+                        if not json_file.name.startswith("sync_metadata_"):
+                            return True
+            
+            return False
+            
+        except Exception:
+            return False
     
     def get_session_json_directories(self, session_path: Optional[str] = None) -> list:
         """Get list of directories containing JSON files from sync_sessions"""

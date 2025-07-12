@@ -795,7 +795,8 @@ class JSONDataPopulator:
                     
         except sqlite3.OperationalError:
             # If json_table_mapping table doesn't exist, fall back to filename-based mapping
-            self.logger.warning("json_table_mapping table not found, using filename-based mapping")
+            # This is normal behavior - filename-based mapping works perfectly fine
+            self.logger.info("Using filename-based table mapping (json_table_mapping table not present)")
             
             for module_name, file_path in json_files.items():
                 # Apply json_ prefix to match standard table naming convention
