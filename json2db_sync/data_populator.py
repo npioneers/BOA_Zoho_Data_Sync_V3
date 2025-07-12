@@ -29,9 +29,9 @@ class JSONDataPopulator:
                  json_dir: str = None):
         # Import configuration system
         try:
-            from .json2db_config import get_config
+            from .config import get_config
         except ImportError:
-            from json2db_config import get_config
+            from config import get_config
         
         self.config = get_config()
         
@@ -650,27 +650,9 @@ class JSONDataPopulator:
         print("="*80)
 
     def _detect_session_structure(self) -> bool:
-        """Detect if we're working with a session-based structure"""
-        # Check if json_dir is a session folder
-        if self.json_dir.name.startswith("sync_session_"):
-            return True
-        
-        # Check if json_dir contains session folders
-        if (self.json_dir / "data" / "sync_sessions").exists():
-            return True
-            
-        # Check if it has raw_json subdirectory with timestamp folders (session structure)
-        raw_json_dir = self.json_dir / "raw_json"
-        if raw_json_dir.exists():
-            # Look for timestamp directories
-            timestamp_dirs = [
-                d for d in raw_json_dir.iterdir() 
-                if d.is_dir() and d.name.count('-') == 4  # YYYY-MM-DD_HH-MM-SS format
-            ]
-            if timestamp_dirs:
-                return True
-        
-        return False
+        """Always return True - we always use session-based structure"""
+        # Simplified: always treat as session-based structure
+        return True
     
     def _get_session_json_files(self) -> Dict[str, Path]:
         """Get all JSON files from session-based structure"""

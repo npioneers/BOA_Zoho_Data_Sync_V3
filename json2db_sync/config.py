@@ -20,13 +20,13 @@ class JSON2DBConfig:
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration values"""
         return {
-            # Data source configuration
+            # Data source configuration  
             "data_source": {
                 "type": "api_sync",  # "api_sync" or "consolidated"
-                "api_sync_base_path": "../api_sync",
+                "api_sync_base_path": "../api_sync/data/sync_sessions",  # Always point to sync_sessions
                 "consolidated_path": "data/raw_json/json_compiled",
-                "prefer_session_based": True,  # Use session-based over traditional
-                "fallback_to_traditional": True
+                "prefer_session_based": True,  # Always use session-based
+                "fallback_to_traditional": False  # No fallback - always session-based
             },
             
             # Database configuration
@@ -41,15 +41,18 @@ class JSON2DBConfig:
                 "default_cutoff_days": 30,
                 "batch_size": 1000,
                 "max_memory_usage_mb": 512,
-                "enable_progress_logging": True
+                "enable_progress_logging": True,
+                "enable_duplicate_prevention": True,  # Always enable duplicate prevention
+                "skip_existing_records": True  # Skip records that already exist
             },
             
             # Session configuration
             "session": {
-                "auto_detect_latest": True,
-                "max_session_age_hours": 24,
-                "require_session_success": False,
-                "include_metadata": True
+                "auto_detect_latest": True,  # Always find latest session
+                "max_session_age_hours": 48,  # Allow older sessions if needed
+                "require_session_success": False,  # Don't require session success flag
+                "include_metadata": True,  # Include session metadata
+                "force_session_based": True  # Always treat as session-based
             },
             
             # Logging configuration
@@ -155,6 +158,13 @@ class JSON2DBConfig:
         relative_path = self._config["data_source"]["api_sync_base_path"]
         return self._resolve_path(relative_path)
     
+    def get_effective_data_source_path(self) -> str:
+        """Get the effective data source path based on current configuration"""
+        if self.is_api_sync_mode():
+            return self.get_api_sync_path()
+        else:
+            return self.get_consolidated_path()
+    
     def get_consolidated_path(self) -> str:
         """Get consolidated JSON path (resolved to absolute path)"""
         relative_path = self._config["data_source"]["consolidated_path"]
@@ -183,6 +193,63 @@ class JSON2DBConfig:
     def get_session_config(self) -> Dict[str, Any]:
         """Get session configuration"""
         return self._config["session"]
+    
+    def get_latest_session_folder(self) -> Optional[str]:
+        """Get the latest session folder from the sync_sessions directory"""
+        try:
+            sync_sessions_path = Path(self.get_api_sync_path())
+            if not sync_sessions_path.exists():
+                return None
+            
+            # Find all session folders
+            session_folders = [
+                f for f in sync_sessions_path.iterdir() 
+                if f.is_dir() and f.name.startswith("sync_session_")
+            ]
+            
+            if not session_folders:
+                return None
+            
+            # Sort by creation time (newest first) and return the latest
+            latest_session = max(session_folders, key=lambda x: x.stat().st_mtime)
+            return str(latest_session)
+            
+        except Exception as e:
+            print(f"Warning: Could not determine latest session folder: {e}")
+            return None
+    
+    def get_session_json_directories(self, session_path: Optional[str] = None) -> list:
+        """Get list of directories containing JSON files from sync_sessions"""
+        try:
+            # Always work with the sync_sessions directory
+            sync_sessions_path = Path(self.get_api_sync_path())
+            if not sync_sessions_path.exists():
+                return []
+            
+            json_directories = []
+            
+            # Find all session folders
+            session_folders = [
+                f for f in sync_sessions_path.iterdir() 
+                if f.is_dir() and f.name.startswith("sync_session_")
+            ]
+            
+            for session_folder in session_folders:
+                # Look for raw_json subdirectory
+                raw_json_path = session_folder / "raw_json"
+                if raw_json_path.exists():
+                    # Find timestamp directories within raw_json
+                    timestamp_dirs = [
+                        d for d in raw_json_path.iterdir() 
+                        if d.is_dir()
+                    ]
+                    json_directories.extend(timestamp_dirs)
+            
+            return json_directories
+            
+        except Exception as e:
+            print(f"Warning: Could not get session directories: {e}")
+            return []
     
     def save_config(self, file_path: str):
         """Save current configuration to file"""

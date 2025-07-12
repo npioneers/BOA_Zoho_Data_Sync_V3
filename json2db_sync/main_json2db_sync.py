@@ -160,12 +160,16 @@ class JSON2DBSyncWrapper:
         self.clear_screen()
         self.print_header("JSON File Analysis")
         
-        print("\n📁 This will analyze JSON files to understand their structure.")
+        print("\n📁 This will analyze JSON files from sync sessions to understand their structure.")
+        print("💡 System is configured to always use session-based data from api_sync/data/sync_sessions")
         
         # Get JSON directory from configuration (session-based only)
         config = get_config()
         default_json_dir = config.get_api_sync_path()
-        json_dir = self.get_user_input("JSON files directory", default_json_dir)
+        
+        print(f"\n📁 Default sync sessions path: {default_json_dir}")
+        
+        json_dir = self.get_user_input("Sync sessions directory", default_json_dir)
         
         if not Path(json_dir).exists():
             print(f"\n❌ Directory not found: {json_dir}")
@@ -348,11 +352,8 @@ class JSON2DBSyncWrapper:
         
         # Get database path from configuration
         config = get_config()
-        default_db_path = config.get_database_path()
-        db_path = self.get_user_input("Database file path", default_db_path)
-        
-        if not self.confirm_action("\nProceed with table recreation?"):
-            return
+        db_path = config.get_database_path()
+        print(f"📁 Database path: {db_path}")
         
         print(f"\n🔄 Recreating JSON tables in: {db_path}")
         result = self.runner.recreate_json_tables(db_path)
@@ -365,15 +366,21 @@ class JSON2DBSyncWrapper:
         self.clear_screen()
         self.print_header("Populate Tables with Data")
         
-        print("\n📊 This will populate JSON tables with data from JSON files.")
+        print("\n📊 This will populate JSON tables with data from sync sessions.")
+        print("💡 System is configured to always use session-based data from api_sync/data/sync_sessions")
+        print("\n⚠️  WARNING: This operation will:")
+        print("   • CLEAR existing data in JSON tables")
+        print("   • Populate tables with fresh data from sessions")
+        print("   • Use 30-day cutoff filter automatically")
+        print("   • Apply duplicate prevention measures")
         
         # Get paths from configuration (session-based only)
         config = get_config()
-        default_db_path = config.get_database_path()
-        default_json_dir = config.get_api_sync_path()
+        db_path = config.get_database_path()
+        json_dir = config.get_api_sync_path()
         
-        db_path = self.get_user_input("Database file path", default_db_path)
-        json_dir = self.get_user_input("JSON files directory", default_json_dir)
+        print(f"\n📁 Database path: {db_path}")
+        print(f"📁 Sync sessions path: {json_dir}")
         
         # Check if paths exist
         if not Path(db_path).exists():
@@ -386,27 +393,17 @@ class JSON2DBSyncWrapper:
             self.pause()
             return
         
-        # Ask about cutoff filtering
-        use_cutoff = self.confirm_action("\nUse date cutoff filtering (recommended)?")
-        cutoff_days = None
-        
-        if use_cutoff:
-            while True:
-                try:
-                    cutoff_input = self.get_user_input("Number of days back to include", "30")
-                    cutoff_days = int(cutoff_input)
-                    if cutoff_days > 0:
-                        break
-                    else:
-                        print("Please enter a positive number")
-                except ValueError:
-                    print("Please enter a valid number")
-        
-        if not self.confirm_action(f"\nProceed with data population?" + 
-                                 (f" (filtering last {cutoff_days} days)" if cutoff_days else "")):
+        # Add confirmation before proceeding
+        if not self.confirm_action("\n⚠️  Proceed with table clearing and data population?"):
+            print("📋 Operation cancelled by user.")
+            self.pause()
             return
         
-        print(f"\n📊 Populating tables...")
+        # Use default 30-day cutoff (no user confirmation)
+        cutoff_days = 30
+        print(f"🗓️  Using default 30-day cutoff filter")
+        
+        print(f"\n📊 Populating tables with data from last {cutoff_days} days...")
         result = self.runner.populate_tables(db_path, json_dir, cutoff_days)
         
         self.print_result(result, "Data Population")
@@ -527,8 +524,8 @@ class JSON2DBSyncWrapper:
         print("\n📋 This will generate a comprehensive summary report.")
         
         config = get_config()
-        default_db_path = config.get_database_path()
-        db_path = self.get_user_input("Database file path", default_db_path)
+        db_path = config.get_database_path()
+        print(f"📁 Database path: {db_path}")
         
         if not Path(db_path).exists():
             print(f"\n❌ Database file not found: {db_path}")
@@ -544,8 +541,23 @@ class JSON2DBSyncWrapper:
             report = result.get("report", {})
             if report:
                 print("\n📊 Quick Summary:")
-                print(f"   • Total tables: {report.get('total_tables', 'N/A')}")
-                print(f"   • Total records: {report.get('total_records', 'N/A')}")
+                
+                # Extract data from the comprehensive report structure
+                db_info = report.get("database_info", {})
+                summary_stats = report.get("summary_statistics", {})
+                
+                total_tables = db_info.get("total_tables", "N/A")
+                total_json_records = summary_stats.get("total_json_records", 0)
+                total_csv_records = summary_stats.get("total_csv_records", 0)
+                total_records = total_json_records + total_csv_records if isinstance(total_json_records, int) and isinstance(total_csv_records, int) else "N/A"
+                
+                json_tables_populated = summary_stats.get("json_tables_populated", "N/A")
+                db_size = db_info.get("database_size_mb", "N/A")
+                
+                print(f"   • Total tables: {total_tables}")
+                print(f"   • Total records: {total_records:,}" if isinstance(total_records, int) else f"   • Total records: {total_records}")
+                print(f"   • JSON tables populated: {json_tables_populated}")
+                print(f"   • Database size: {db_size} MB")
         
         self.pause()
 
