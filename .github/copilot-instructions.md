@@ -19,7 +19,7 @@
 
 ## PRIME DIRECTIVE
 - Communicate your reasoning and process as you code, teaching and explaining each step.
-- **Use a dedicated scratchpad file:** All temporary notes, drafts, or multi-step code plans must be written to `copilot_notes_remarks.md`. This keeps our main chat focused and **prevents leaving temporary artifacts in production code files.**
+- **Use a dedicated scratchpad file for each package:** All temporary notes, drafts, or multi-step code plans must be written to `COPILOT_<package_name>_NOTES.md` and saved inside the folder of the respective package. This keeps our main chat focused and **prevents leaving temporary artifacts in production code files.**, DO NOT ARCHIVE OR CLEAN UP THIS FILE
 - Structure code in a modular and maintainable way, using functions and classes where appropriate.
 
 ## CONFIGURATION-DRIVEN DESIGN PRINCIPLES
@@ -102,3 +102,5 @@
 - the runner is the main background runner (purely programmatic) that takes the various options and runs the rquired functionality, 
 - the wrapper is the user encapsulation that provides the functionalities as menu items and calls the runner as per user input.
 - Runner: Pure business logic, no user interaction; Wrapper: All menus, user prompts, and calls to runner
+- ALWAYHS CREATE A README.md file inside each package explaining the project, its functions and the structure
+- ALWAYS CREATE A PACKAGE_CONSUMER_GUIDE.md file explaing how use the package, using is directly by user as well as externally when called by other modules

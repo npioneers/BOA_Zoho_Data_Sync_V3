@@ -22,11 +22,13 @@ class JSONAnalyzer:
                 from config import get_config
             
             config = get_config()
-            json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                       else config.get_consolidated_path())
+            json_dir = config.get_api_sync_path()
         
         self.json_dir = Path(json_dir)
         self.setup_logging()
+        
+        # Check if this is a session-based structure
+        self.session_based = self._is_session_based_structure()
         
         # Target tables (main entities and their line item tables) with json_ prefix
         self.target_tables = {
@@ -50,6 +52,7 @@ class JSONAnalyzer:
             'salesorders.json': 'json_sales_orders',
             'purchaseorders.json': 'json_purchase_orders',
             'creditnotes.json': 'json_credit_notes',
+            # Line item files
             'invoices_line_items.json': 'json_invoices_line_items',
             'bills_line_items.json': 'json_bills_line_items',
             'salesorders_line_items.json': 'json_salesorders_line_items',
@@ -60,7 +63,58 @@ class JSONAnalyzer:
         # Analysis results
         self.analysis_results = {}
         self.table_schemas = {}
+    
+    def _is_session_based_structure(self) -> bool:
+        """Check if the data follows session-based structure"""
+        # Look for sync_sessions directory
+        sessions_dir = self.json_dir / "data" / "sync_sessions"
+        return sessions_dir.exists() and sessions_dir.is_dir()
+    
+    def _get_latest_session_data_path(self) -> Optional[Path]:
+        """Get the path to the latest session data following the Data Consumer Guide pattern"""
+        if not self.session_based:
+            return None
+            
+        sessions_dir = self.json_dir / "data" / "sync_sessions"
         
+        if not sessions_dir.exists():
+            return None
+        
+        # Find latest session folder
+        session_folders = [
+            f for f in sessions_dir.iterdir() 
+            if f.is_dir() and f.name.startswith("sync_session_")
+        ]
+        
+        if not session_folders:
+            return None
+        
+        # Sort by timestamp (newest first)
+        latest_session = sorted(session_folders, key=lambda x: x.name, reverse=True)[0]
+        
+        # Return the raw_json directory within the latest session
+        raw_json_dir = latest_session / "raw_json"
+        return raw_json_dir if raw_json_dir.exists() else None
+    
+    def _find_json_files_in_session(self, raw_json_dir: Path) -> List[Path]:
+        """Find JSON files in session-based timestamp directories"""
+        json_files = []
+        
+        # Find timestamp directories within the session
+        timestamp_dirs = [
+            d for d in raw_json_dir.iterdir() 
+            if d.is_dir() and d.name.count('-') >= 4  # timestamp format like 2025-07-11_13-54-38
+        ]
+        
+        # Look for JSON files in timestamp directories
+        for timestamp_dir in sorted(timestamp_dirs, reverse=True):
+            for json_file in timestamp_dir.glob("*.json"):
+                # Only add if we haven't already found this file type
+                if not any(existing.name == json_file.name for existing in json_files):
+                    json_files.append(json_file)
+        
+        return json_files
+
     def setup_logging(self):
         """Setup logging for analysis process"""
         log_dir = Path("logs")
@@ -116,10 +170,14 @@ class JSONAnalyzer:
                         columns[col_name] = col_info
                         columns[col_name]['nullable'] = True  # Must be nullable since missing in first record
             
+            # Extract date range information
+            date_info = self._extract_date_range(data, json_file.name)
+            
             result = {
                 'record_count': len(data),
                 'columns': columns,
-                'sample_record': sample_record
+                'sample_record': sample_record,
+                'date_range': date_info
             }
             
             self.logger.info(f"Analyzed {json_file.name}: {len(data)} records, {len(columns)} columns")
@@ -151,6 +209,92 @@ class JSONAnalyzer:
             }
         
         return columns
+
+    def _extract_date_range(self, data: list, json_filename: str) -> dict:
+        """Extract date range information from JSON data"""
+        if not data:
+            return {'earliest_date': None, 'latest_date': None, 'date_field': None, 'total_records': 0}
+        
+        # Business date fields to look for (prioritize business dates over system dates)
+        business_date_fields = [
+            'invoice_date', 'bill_date', 'payment_date', 'order_date', 
+            'creditnote_date', 'date', 'transaction_date'
+        ]
+        
+        # System date fields as fallback
+        system_date_fields = [
+            'created_time', 'last_modified_time', 'updated_time', 
+            'created_date', 'modified_date'
+        ]
+        
+        # All possible date fields in priority order
+        all_date_fields = business_date_fields + system_date_fields
+        
+        # Find the first available date field
+        date_field = None
+        for field in all_date_fields:
+            if any(field in record for record in data):
+                date_field = field
+                break
+        
+        if not date_field:
+            return {'earliest_date': None, 'latest_date': None, 'date_field': None, 'total_records': len(data)}
+        
+        # Extract all valid dates
+        valid_dates = []
+        for record in data:
+            if date_field in record and record[date_field]:
+                date_str = str(record[date_field])
+                parsed_date = self._parse_date_string(date_str)
+                if parsed_date:
+                    valid_dates.append(parsed_date)
+        
+        if not valid_dates:
+            return {'earliest_date': None, 'latest_date': None, 'date_field': date_field, 'total_records': len(data)}
+        
+        # Find min and max dates
+        earliest_date = min(valid_dates)
+        latest_date = max(valid_dates)
+        
+        return {
+            'earliest_date': earliest_date.strftime('%Y-%m-%d'),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'date_field': date_field,
+            'total_records': len(data),
+            'records_with_dates': len(valid_dates)
+        }
+    
+    def _parse_date_string(self, date_str: str) -> Optional[datetime]:
+        """Parse various date string formats"""
+        if not date_str or date_str.lower() in ['null', 'none', '']:
+            return None
+        
+        # Common date formats in Zoho data
+        date_formats = [
+            '%Y-%m-%d',           # 2025-07-12
+            '%Y-%m-%d %H:%M:%S',  # 2025-07-12 10:30:00
+            '%d-%m-%Y',           # 12-07-2025
+            '%d/%m/%Y',           # 12/07/2025
+            '%m/%d/%Y',           # 07/12/2025
+            '%Y-%m-%dT%H:%M:%S',  # 2025-07-12T10:30:00
+            '%Y-%m-%dT%H:%M:%SZ', # 2025-07-12T10:30:00Z
+            '%Y-%m-%dT%H:%M:%S+00:00', # 2025-07-12T10:30:00+00:00
+        ]
+        
+        for fmt in date_formats:
+            try:
+                return datetime.strptime(date_str[:len(fmt.replace('%f', '000000'))], fmt)
+            except ValueError:
+                continue
+        
+        # Try to handle ISO format with timezone
+        try:
+            from dateutil.parser import parse
+            return parse(date_str)
+        except:
+            pass
+        
+        return None
 
     def clean_field_name(self, field_name: str) -> str:
         """Clean field name for database compatibility"""
@@ -232,26 +376,60 @@ class JSONAnalyzer:
 
     def analyze_all_json_files(self) -> Dict[str, Any]:
         """Analyze all target JSON files in the directory"""
-        self.logger.info("Starting analysis of consolidated JSON files...")
+        self.logger.info("Starting analysis of JSON files...")
         
         results = {}
         
-        for json_filename, table_name in self.json_to_table_map.items():
-            json_file = self.json_dir / json_filename
+        if self.session_based:
+            # Handle session-based structure
+            self.logger.info("Using session-based structure")
+            latest_session_path = self._get_latest_session_data_path()
             
-            if not json_file.exists():
-                self.logger.warning(f"JSON file not found: {json_file}")
-                continue
+            if not latest_session_path:
+                self.logger.warning("No session data found in session-based structure")
+                return results
             
-            self.logger.info(f"Analyzing {json_filename} -> {table_name}")
-            analysis = self.analyze_json_file(json_file)
+            self.logger.info(f"Using latest session data from: {latest_session_path}")
+            json_files = self._find_json_files_in_session(latest_session_path)
             
-            if analysis:
-                results[table_name] = {
-                    'json_file': json_filename,
-                    'table_name': table_name,
-                    'analysis': analysis
-                }
+            for json_file in json_files:
+                json_filename = json_file.name
+                table_name = self.json_to_table_map.get(json_filename)
+                
+                if not table_name:
+                    self.logger.info(f"Skipping non-target file: {json_filename}")
+                    continue
+                
+                self.logger.info(f"Analyzing {json_filename} -> {table_name}")
+                analysis = self.analyze_json_file(json_file)
+                
+                if analysis:
+                    results[table_name] = {
+                        'json_file': json_filename,
+                        'table_name': table_name,
+                        'analysis': analysis,
+                        'file_path': str(json_file)
+                    }
+        else:
+            # Handle traditional flat structure
+            self.logger.info("Using traditional flat structure")
+            for json_filename, table_name in self.json_to_table_map.items():
+                json_file = self.json_dir / json_filename
+                
+                if not json_file.exists():
+                    self.logger.warning(f"JSON file not found: {json_file}")
+                    continue
+                
+                self.logger.info(f"Analyzing {json_filename} -> {table_name}")
+                analysis = self.analyze_json_file(json_file)
+                
+                if analysis:
+                    results[table_name] = {
+                        'json_file': json_filename,
+                        'table_name': table_name,
+                        'analysis': analysis,
+                        'file_path': str(json_file)
+                    }
         
         self.analysis_results = results
         self.logger.info(f"Analysis complete. Found {len(results)} valid JSON files.")

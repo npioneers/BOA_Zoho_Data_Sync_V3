@@ -505,6 +505,89 @@ class JSONDataPopulator:
             'table_results': results
         }
 
+    def populate_all_tables_with_cutoff(self, cutoff_days: int) -> Dict[str, Any]:
+        """
+        Populate all JSON tables with data using custom cutoff days.
+        
+        Args:
+            cutoff_days: Number of days back from today to filter data
+            
+        Returns:
+            Dict containing population results and statistics
+        """
+        from datetime import datetime, timedelta
+        
+        self.stats['start_time'] = datetime.now()
+        self.logger.info(f"Starting JSON data population with {cutoff_days} day cutoff...")
+        
+        # Calculate custom cutoff date
+        cutoff_date = (datetime.now() - timedelta(days=cutoff_days)).strftime('%Y-%m-%d')
+        self.stats['cutoff_date'] = cutoff_date
+        self.logger.info(f"Using custom cutoff date: {cutoff_date}")
+        
+        # Get available JSON files and their mappings
+        if self.is_session_based:
+            # Session-based: Get files from session structure
+            json_files = self.get_available_json_files()
+            table_mappings = self._get_table_mappings_for_files(json_files)
+        else:
+            # Consolidated: Use existing analyzer approach
+            if not self.analyzer.analysis_results:
+                self.analyzer.analyze_all_json_files()
+            table_mappings = self.analyzer.analysis_results
+        
+        results = {}
+        
+        # Process tables serially
+        for table_name, table_info in table_mappings.items():
+            self.stats['tables_processed'] += 1
+            
+            if self.is_session_based:
+                json_file_path = table_info['json_file_path']
+                json_filename = json_file_path.name
+            else:
+                json_filename = table_info['json_file']
+                json_file_path = self.json_dir / json_filename
+            
+            total_tables = len(table_mappings)
+            self.logger.info(f"Processing table {self.stats['tables_processed']}/{total_tables}: {table_name}")
+            
+            try:
+                if self.is_session_based:
+                    result = self.populate_table_from_path(table_name, json_file_path, cutoff_date)
+                else:
+                    result = self.populate_table(table_name, json_filename, cutoff_date)
+                results[table_name] = result
+                
+                if result['success']:
+                    self.stats['tables_succeeded'] += 1
+                    self.stats['total_records_inserted'] += result['records_inserted']
+                else:
+                    self.stats['tables_failed'] += 1
+                    self.stats['errors'].append(f"{table_name}: {result['error']}")
+                    
+            except Exception as e:
+                error_msg = f"Fatal error processing {table_name}: {str(e)}"
+                self.logger.error(error_msg)
+                self.stats['tables_failed'] += 1
+                self.stats['errors'].append(error_msg)
+                results[table_name] = {
+                    'success': False,
+                    'error': error_msg,
+                    'records_inserted': 0
+                }
+                # Continue to next table
+                continue
+        
+        self.stats['end_time'] = datetime.now()
+        self.logger.info(f"JSON data population with {cutoff_days} day cutoff completed")
+        
+        return {
+            'success': self.stats['tables_failed'] == 0,
+            'stats': self.stats,
+            'table_results': results
+        }
+
     def clear_json_tables(self):
         """Clear all JSON tables"""
         try:

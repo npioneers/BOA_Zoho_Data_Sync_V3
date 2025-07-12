@@ -10,21 +10,19 @@ from datetime import datetime
 
 # Handle imports for both standalone and module usage
 try:
+    from .data_populator import JSONDataPopulator
+    from .config import get_config
     from .json_analyzer import JSONAnalyzer
     from .table_generator import TableGenerator
     from .json_tables_recreate import JSONTablesRecreator
-    from .data_populator import JSONDataPopulator
     from .summary_reporter import SyncSummaryReporter
-    from .check_json_tables import check_json_tables
-    from .config import get_config
 except ImportError:
+    from data_populator import JSONDataPopulator
+    from config import get_config
     from json_analyzer import JSONAnalyzer
     from table_generator import TableGenerator
     from json_tables_recreate import JSONTablesRecreator
-    from data_populator import JSONDataPopulator
     from summary_reporter import SyncSummaryReporter
-    from check_json_tables import check_json_tables
-    from config import get_config
 
 
 class JSON2DBSyncRunner:
@@ -37,11 +35,11 @@ class JSON2DBSyncRunner:
         
         # Use provided paths or fall back to configuration
         self.db_path = Path(db_path or self.config.get_database_path())
-        self.data_source = data_source or (
-            self.config.get_api_sync_path() if self.config.is_api_sync_mode() 
-            else self.config.get_consolidated_path()
-        )
-        self.data_source_type = self.config.get("data_source", "type")
+        self.data_source = data_source or self.config.get_api_sync_path()
+        self.data_source_type = "api_sync"
+        
+        # Set json_dir based on data_source (always session-based)
+        self.json_dir = Path(self.data_source)
         
         self.setup_logging()
         
@@ -68,7 +66,7 @@ class JSON2DBSyncRunner:
             self.logger.info(f"Analyzing JSON files in: {target_dir}")
             
             analyzer = JSONAnalyzer(target_dir)
-            schema_analysis = analyzer.analyze_all_files()
+            schema_analysis = analyzer.analyze_all_json_files()
             
             return {
                 "success": True,
@@ -245,20 +243,27 @@ class JSON2DBSyncRunner:
 
     def verify_tables(self, db_path: Optional[str] = None) -> Dict[str, Any]:
         """
-        Verify JSON tables structure and data.
+        Verify JSON tables structure and data with comprehensive summary report.
         
         Args:
             db_path: Path to database file (optional)
             
         Returns:
-            Dict containing verification results
+            Dict containing verification results including detailed summary report
         """
         try:
             target_db = db_path or str(self.db_path)
             self.logger.info(f"Verifying tables in: {target_db}")
             
-            # Use check_json_tables functionality
-            verification_result = check_json_tables()
+            # Generate comprehensive table summary
+            summary_report = self._generate_table_summary_report(target_db)
+            
+            verification_result = {
+                "status": "completed",
+                "message": "Comprehensive verification completed with summary report",
+                "db_path": target_db,
+                "summary_report": summary_report
+            }
             
             return {
                 "success": True,
@@ -276,6 +281,184 @@ class JSON2DBSyncRunner:
                 "error": str(e),
                 "db_path": target_db if 'target_db' in locals() else str(self.db_path)
             }
+
+    def _get_business_date_column(self, table_name: str, columns: List[str]) -> Optional[str]:
+        """
+        Get the most appropriate business date column for a table.
+        Prioritizes business document dates over system sync dates.
+        
+        Args:
+            table_name: Name of the database table
+            columns: List of column names in the table
+            
+        Returns:
+            The best date column to use for oldest/latest date calculation, or None
+        """
+        table_lower = table_name.lower()
+        
+        # 1. Document-specific business dates (HIGHEST PRIORITY)
+        if 'invoice' in table_lower:
+            for col in ['invoice_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'bill' in table_lower:
+            for col in ['bill_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'salesorder' in table_lower or 'sales_order' in table_lower:
+            for col in ['salesorder_date', 'order_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'purchaseorder' in table_lower or 'purchase_order' in table_lower:
+            for col in ['purchaseorder_date', 'purchase_order_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'creditnote' in table_lower or 'credit_note' in table_lower:
+            for col in ['creditnote_date', 'credit_note_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif any(term in table_lower for term in ['payment', 'customerpayment', 'vendorpayment']):
+            for col in ['payment_date', 'date']:
+                if col in columns: 
+                    return col
+        
+        # 2. Generic business date (MEDIUM PRIORITY)
+        if 'date' in columns:
+            return 'date'
+        
+        # 3. System dates (LOWEST PRIORITY - only if no business date available)
+        for sys_date in ['created_time', 'last_modified_time', 'updated_time', 'modified_time', 'created_timestamp', 'updated_timestamp']:
+            if sys_date in columns:
+                return sys_date
+                
+        return None
+
+    def _generate_table_summary_report(self, db_path: str) -> Dict[str, Any]:
+        """
+        Generate comprehensive table summary report with requested metrics.
+        
+        Args:
+            db_path: Path to database file
+            
+        Returns:
+            Dict containing detailed table analysis
+        """
+        import sqlite3
+        from pathlib import Path
+        
+        if not Path(db_path).exists():
+            return {"error": f"Database file not found: {db_path}"}
+        
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Get all table names (excluding system tables)
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            tables = [row[0] for row in cursor.fetchall()]
+            
+            if not tables:
+                return {"error": "No tables found in database"}
+            
+            table_details = []
+            total_records = 0
+            
+            for table_name in tables:
+                try:
+                    # Get row count
+                    cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+                    row_count = cursor.fetchone()[0]
+                    total_records += row_count
+                    
+                    # Initialize date fields
+                    oldest_date = "N/A"
+                    latest_date = "N/A"
+                    last_sync_timestamp = "N/A"
+                    
+                    if row_count > 0:
+                        # Get table schema to find date columns
+                        cursor.execute(f"PRAGMA table_info(`{table_name}`)")
+                        columns = [col[1] for col in cursor.fetchall()]
+                        
+                        # Use business date priority logic to find the best date column
+                        primary_date_col = self._get_business_date_column(table_name, columns)
+                        
+                        # Try to find oldest and latest dates using business date column
+                        if primary_date_col:
+                            try:
+                                # Get oldest date
+                                cursor.execute(f"SELECT MIN(`{primary_date_col}`) FROM `{table_name}` WHERE `{primary_date_col}` IS NOT NULL")
+                                oldest_result = cursor.fetchone()[0]
+                                if oldest_result:
+                                    oldest_date = str(oldest_result)[:19]  # Truncate to datetime format
+                                
+                                # Get latest date  
+                                cursor.execute(f"SELECT MAX(`{primary_date_col}`) FROM `{table_name}` WHERE `{primary_date_col}` IS NOT NULL")
+                                latest_result = cursor.fetchone()[0]
+                                if latest_result:
+                                    latest_date = str(latest_result)[:19]  # Truncate to datetime format
+                                    
+                            except Exception:
+                                # If date parsing fails, keep N/A
+                                pass
+                        
+                        # Check for sync timestamp metadata
+                        if 'last_sync_time' in columns:
+                            try:
+                                cursor.execute(f"SELECT MAX(`last_sync_time`) FROM `{table_name}` WHERE `last_sync_time` IS NOT NULL")
+                                sync_result = cursor.fetchone()[0]
+                                if sync_result:
+                                    last_sync_timestamp = str(sync_result)[:19]
+                            except Exception:
+                                pass
+                        elif 'data_source' in columns:
+                            # For tables with data_source, check for most recent data source info
+                            try:
+                                cursor.execute(f"SELECT `data_source` FROM `{table_name}` ORDER BY rowid DESC LIMIT 1")
+                                source_result = cursor.fetchone()
+                                if source_result and source_result[0]:
+                                    last_sync_timestamp = f"Source: {source_result[0]}"
+                            except Exception:
+                                pass
+                    
+                    table_details.append({
+                        "table_name": table_name,
+                        "row_count": row_count,
+                        "oldest_date": oldest_date,
+                        "latest_date": latest_date,
+                        "last_sync_timestamp": last_sync_timestamp
+                    })
+                    
+                except Exception as e:
+                    # Add table with error info
+                    table_details.append({
+                        "table_name": table_name,
+                        "row_count": 0,
+                        "oldest_date": "Error",
+                        "latest_date": "Error", 
+                        "last_sync_timestamp": f"Error: {str(e)[:50]}"
+                    })
+            
+            conn.close()
+            
+            # Sort by table name (alphabetically)
+            table_details.sort(key=lambda x: x["table_name"].lower())
+            
+            return {
+                "total_tables": len(tables),
+                "total_records": total_records,
+                "populated_tables": len([t for t in table_details if t["row_count"] > 0]),
+                "table_details": table_details,
+                "generated_at": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            return {"error": f"Failed to generate summary report: {str(e)}"}
 
     def generate_summary_report(self, db_path: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -422,8 +605,7 @@ def run_json_analysis(json_dir: str = None) -> Dict[str, Any]:
     runner = JSON2DBSyncRunner()
     if json_dir is None:
         config = get_config()
-        json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                   else config.get_consolidated_path())
+        json_dir = config.get_api_sync_path()
     return runner.analyze_json_files(json_dir)
 
 
@@ -446,8 +628,7 @@ def run_data_population(db_path: str = None,
     if db_path is None:
         db_path = config.get_database_path()
     if json_dir is None:
-        json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                   else config.get_consolidated_path())
+        json_dir = config.get_api_sync_path()
     
     return runner.populate_tables(db_path, json_dir, cutoff_days)
 
@@ -463,7 +644,6 @@ def run_full_workflow(db_path: str = None,
     if db_path is None:
         db_path = config.get_database_path()
     if json_dir is None:
-        json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                   else config.get_consolidated_path())
+        json_dir = config.get_api_sync_path()
     
     return runner.full_sync_workflow(db_path, json_dir, cutoff_days, skip_table_creation)

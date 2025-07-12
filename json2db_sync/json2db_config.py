@@ -46,7 +46,7 @@ class JSON2DBSyncConfig:
         """Default configuration values"""
         return {
             "database": {
-                "path": "../data/database/production.db",  # Corrected path to existing database
+                "path": "data/database/production.db",  # Relative to project root
                 "connection_timeout": 30
             },
             "data_source": {
@@ -162,7 +162,10 @@ class JSON2DBSyncConfig:
                 base[key] = value
     
     def _resolve_paths(self):
-        """Resolve all paths to absolute paths"""
+        """Resolve all paths to absolute paths relative to project root"""
+        # Get project root (parent of json2db_sync directory)
+        project_root = Path(__file__).parent.parent
+        
         path_sections = ["database", "data_source", "logging", "paths"]
         
         for section in path_sections:
@@ -170,7 +173,12 @@ class JSON2DBSyncConfig:
                 for key, value in self._config[section].items():
                     if "path" in key or "directory" in key:
                         if isinstance(value, str):
-                            self._config[section][key] = str(Path(value).resolve())
+                            # Resolve relative to project root
+                            if not Path(value).is_absolute():
+                                resolved_path = (project_root / value).resolve()
+                            else:
+                                resolved_path = Path(value).resolve()
+                            self._config[section][key] = str(resolved_path)
     
     # Database Configuration
     def get_database_path(self) -> Path:

@@ -6,7 +6,7 @@ Provides interactive menus and calls runner functions.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # Handle imports for both standalone and module usage
 try:
@@ -95,35 +95,32 @@ class JSON2DBSyncWrapper:
             
             print("\n🔧 Available Operations:")
             print("   1. Analyze JSON Files")
-            print("   2. Recreate JSON Tables (Recommended)")
-            print("   3. Populate Tables with Data")
-            print("   4. Verify Tables")
-            print("   5. Generate Summary Report")
-            print("   6. Full Sync Workflow")
-            print("   7. Advanced Options")
+            print("   2. Populate Tables with Data")
+            print("   3. Verify Tables")
+            print("   4. Generate Summary Report")
+            print("   5. Full Sync Workflow")
+            print("   6. Advanced Options")
             print("   0. Exit")
             
-            choice = input("\nSelect an option (0-7): ").strip()
+            choice = input("\nSelect an option (0-6): ").strip()
             
             if choice == '1':
                 self.handle_json_analysis()
             elif choice == '2':
-                self.handle_table_recreation()
-            elif choice == '3':
                 self.handle_data_population()
-            elif choice == '4':
+            elif choice == '3':
                 self.handle_table_verification()
-            elif choice == '5':
+            elif choice == '4':
                 self.handle_summary_report()
-            elif choice == '6':
+            elif choice == '5':
                 self.handle_full_workflow()
-            elif choice == '7':
+            elif choice == '6':
                 self.show_advanced_menu()
             elif choice == '0':
                 print("\n👋 Goodbye!")
                 break
             else:
-                print("\n❌ Invalid choice. Please select 0-7.")
+                print("\n❌ Invalid choice. Please select 0-6.")
                 self.pause()
 
     def show_advanced_menu(self):
@@ -133,26 +130,29 @@ class JSON2DBSyncWrapper:
             self.print_header("JSON2DB Sync - Advanced Options")
             
             print("\n⚙️ Advanced Operations:")
-            print("   1. Create All Tables (Full Creation)")
-            print("   2. Generate Table Schemas Only")
-            print("   3. Custom Workflow Configuration")
-            print("   4. Check Current Configuration")
+            print("   1. Recreate JSON Tables (Recommended)")
+            print("   2. Create All Tables (Full Creation)")
+            print("   3. Generate Table Schemas Only")
+            print("   4. Custom Workflow Configuration")
+            print("   5. Check Current Configuration")
             print("   0. Back to Main Menu")
             
-            choice = input("\nSelect an option (0-4): ").strip()
+            choice = input("\nSelect an option (0-5): ").strip()
             
             if choice == '1':
-                self.handle_full_table_creation()
+                self.handle_table_recreation()
             elif choice == '2':
-                self.handle_schema_generation()
+                self.handle_full_table_creation()
             elif choice == '3':
-                self.handle_custom_workflow()
+                self.handle_schema_generation()
             elif choice == '4':
+                self.handle_custom_workflow()
+            elif choice == '5':
                 self.show_configuration()
             elif choice == '0':
                 break
             else:
-                print("\n❌ Invalid choice. Please select 0-4.")
+                print("\n❌ Invalid choice. Please select 0-5.")
                 self.pause()
 
     def handle_json_analysis(self):
@@ -162,10 +162,9 @@ class JSON2DBSyncWrapper:
         
         print("\n📁 This will analyze JSON files to understand their structure.")
         
-        # Get JSON directory from configuration
+        # Get JSON directory from configuration (session-based only)
         config = get_config()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
+        default_json_dir = config.get_api_sync_path()
         json_dir = self.get_user_input("JSON files directory", default_json_dir)
         
         if not Path(json_dir).exists():
@@ -176,18 +175,167 @@ class JSON2DBSyncWrapper:
         print(f"\n🔍 Analyzing JSON files in: {json_dir}")
         result = self.runner.analyze_json_files(json_dir)
         
-        self.print_result(result, "JSON Analysis")
-        
         if result.get("success"):
+            print("\n✅ JSON Analysis completed successfully!")
+            
             schema_analysis = result.get("schema_analysis", {})
             if schema_analysis:
-                print(f"\n📋 Found {len(schema_analysis)} JSON file types")
-                for file_type, analysis in list(schema_analysis.items())[:5]:
-                    print(f"   • {file_type}: {analysis.get('total_records', 0)} records")
-                if len(schema_analysis) > 5:
-                    print(f"   ... and {len(schema_analysis) - 5} more types")
+                self._display_json_analysis_table(schema_analysis, json_dir)
+            else:
+                print("\n📋 No JSON files found for analysis.")
+        else:
+            self.print_result(result, "JSON Analysis")
         
         self.pause()
+    
+    def _display_json_analysis_table(self, schema_analysis: dict, json_dir: str):
+        """Display comprehensive JSON analysis table"""
+        print(f"\n� JSON File Analysis Report")
+        print("=" * 80)
+        
+        # Sort tables by category and name
+        main_entities = {}
+        line_item_tables = {}
+        
+        for table_name, table_info in schema_analysis.items():
+            if '_line_items' in table_name or 'line_items' in table_name:
+                line_item_tables[table_name] = table_info
+            else:
+                main_entities[table_name] = table_info
+        
+        # Table header
+        print(f"{'Table Name':<28} {'Records':<10} {'Columns':<8} {'JSON File':<25} {'Status'}")
+        print("-" * 80)
+        
+        total_records = 0
+        total_tables = 0
+        main_entities_count = 0
+        line_items_count = 0
+        
+        # Display main entities first
+        if main_entities:
+            print("📋 MAIN ENTITIES:")
+            for table_name in sorted(main_entities.keys()):
+                table_info = main_entities[table_name]
+                analysis = table_info.get('analysis', {})
+                record_count = analysis.get('record_count', 0)
+                column_count = len(analysis.get('columns', {}))
+                json_file = table_info.get('json_file', 'Unknown')
+                
+                # Status with emoji
+                if record_count > 0:
+                    status = "✅ Has Data"
+                else:
+                    status = "⚠️  Empty"
+                
+                print(f"{table_name:<28} {record_count:<10,} {column_count:<8} {json_file:<25} {status}")
+                
+                total_records += record_count
+                total_tables += 1
+                main_entities_count += 1
+        
+        # Display line item tables
+        if line_item_tables:
+            if main_entities:
+                print()
+            print("🔗 LINE ITEM TABLES:")
+            for table_name in sorted(line_item_tables.keys()):
+                table_info = line_item_tables[table_name]
+                analysis = table_info.get('analysis', {})
+                record_count = analysis.get('record_count', 0)
+                column_count = len(analysis.get('columns', {}))
+                json_file = table_info.get('json_file', 'Unknown')
+                
+                # Status with emoji
+                if record_count > 0:
+                    status = "✅ Has Data"
+                else:
+                    status = "⚠️  Empty"
+                
+                print(f"{table_name:<28} {record_count:<10,} {column_count:<8} {json_file:<25} {status}")
+                
+                total_records += record_count
+                total_tables += 1
+                line_items_count += 1
+        
+        # Summary section
+        print("=" * 80)
+        print("📈 SUMMARY:")
+        print(f"   • Total Tables Found: {total_tables}")
+        print(f"   • Main Entities: {main_entities_count}")
+        print(f"   • Line Item Tables: {line_items_count}")
+        print(f"   • Total Records: {total_records:,}")
+        print(f"   • Analysis Source: {json_dir}")
+        
+        # Show tables with and without data
+        tables_with_data = len([t for t in schema_analysis.values() 
+                              if t.get('analysis', {}).get('record_count', 0) > 0])
+        empty_tables = total_tables - tables_with_data
+        
+        if empty_tables > 0:
+            print(f"   • Tables with Data: {tables_with_data}")
+            print(f"   • Empty Tables: {empty_tables}")
+        
+        print("=" * 80)
+        
+        # Date Range Analysis Table
+        self._display_date_range_table(schema_analysis)
+    
+    def _display_date_range_table(self, schema_analysis: dict):
+        """Display date range information for JSON files"""
+        print(f"\n📅 Date Range Analysis")
+        print("=" * 90)
+        
+        # Filter files that have date information
+        files_with_dates = {}
+        files_without_dates = []
+        
+        for table_name, table_info in schema_analysis.items():
+            analysis = table_info.get('analysis', {})
+            date_range = analysis.get('date_range', {})
+            
+            if date_range.get('earliest_date') and date_range.get('latest_date'):
+                files_with_dates[table_name] = {
+                    'table_info': table_info,
+                    'date_range': date_range
+                }
+            else:
+                files_without_dates.append(table_name)
+        
+        if files_with_dates:
+            # Table header
+            print(f"{'Table Name':<28} {'Date Field':<18} {'From Date':<12} {'To Date':<12} {'Records':<8} {'With Dates'}")
+            print("-" * 90)
+            
+            # Sort by earliest date
+            sorted_files = sorted(files_with_dates.items(), 
+                                key=lambda x: x[1]['date_range']['earliest_date'])
+            
+            for table_name, info in sorted_files:
+                date_range = info['date_range']
+                analysis = info['table_info'].get('analysis', {})
+                
+                date_field = date_range.get('date_field', 'Unknown')
+                earliest = date_range.get('earliest_date', 'N/A')
+                latest = date_range.get('latest_date', 'N/A')
+                total_records = date_range.get('total_records', 0)
+                records_with_dates = date_range.get('records_with_dates', 0)
+                
+                # Format date field name
+                if len(date_field) > 17:
+                    date_field = date_field[:14] + "..."
+                
+                print(f"{table_name:<28} {date_field:<18} {earliest:<12} {latest:<12} {total_records:<8,} {records_with_dates:,}")
+        
+        # Show files without date information
+        if files_without_dates:
+            print(f"\n📋 FILES WITHOUT DATE INFORMATION:")
+            for table_name in sorted(files_without_dates):
+                analysis = schema_analysis[table_name].get('analysis', {})
+                record_count = analysis.get('record_count', 0)
+                print(f"   • {table_name}: {record_count:,} records (no date fields found)")
+        
+        print("=" * 90)
 
     def handle_table_recreation(self):
         """Handle JSON table recreation"""
@@ -198,8 +346,9 @@ class JSON2DBSyncWrapper:
         print("   • Preserves database file and other tables")
         print("   • Recommended for regular operations")
         
-        # Get database path
-        default_db_path = "data/database/production.db"
+        # Get database path from configuration
+        config = get_config()
+        default_db_path = config.get_database_path()
         db_path = self.get_user_input("Database file path", default_db_path)
         
         if not self.confirm_action("\nProceed with table recreation?"):
@@ -218,11 +367,10 @@ class JSON2DBSyncWrapper:
         
         print("\n📊 This will populate JSON tables with data from JSON files.")
         
-        # Get paths from configuration
+        # Get paths from configuration (session-based only)
         config = get_config()
         default_db_path = config.get_database_path()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
+        default_json_dir = config.get_api_sync_path()
         
         db_path = self.get_user_input("Database file path", default_db_path)
         json_dir = self.get_user_input("JSON files directory", default_json_dir)
@@ -271,7 +419,8 @@ class JSON2DBSyncWrapper:
         
         print("\n✅ This will verify the structure and data of JSON tables.")
         
-        default_db_path = "data/database/production.db"
+        config = get_config()
+        default_db_path = config.get_database_path()
         db_path = self.get_user_input("Database file path", default_db_path)
         
         if not Path(db_path).exists():
@@ -282,8 +431,93 @@ class JSON2DBSyncWrapper:
         print(f"\n✅ Verifying tables in: {db_path}")
         result = self.runner.verify_tables(db_path)
         
-        self.print_result(result, "Table Verification")
+        if result.get("success") and "verification_result" in result:
+            verification_result = result["verification_result"]
+            
+            if "summary_report" in verification_result:
+                summary = verification_result["summary_report"]
+                
+                if "error" in summary:
+                    print(f"\n❌ Verification Error: {summary['error']}")
+                else:
+                    self._display_table_summary_report(summary)
+            else:
+                self.print_result(result, "Table Verification")
+        else:
+            self.print_result(result, "Table Verification")
+        
         self.pause()
+
+    def _display_table_summary_report(self, summary: Dict[str, Any]):
+        """Display the table summary report in a formatted table"""
+        print(f"\n📊 DATABASE SUMMARY REPORT")
+        print("=" * 105)
+        
+        # Display overview statistics
+        print(f"📁 Total Tables: {summary.get('total_tables', 0)}")
+        print(f"📊 Populated Tables: {summary.get('populated_tables', 0)}/{summary.get('total_tables', 0)}")
+        print(f"📈 Total Records: {summary.get('total_records', 0):,}")
+        print(f"🕒 Generated: {summary.get('generated_at', 'Unknown')[:19]}")
+        print("=" * 105)
+        
+        # Display detailed table information
+        table_details = summary.get('table_details', [])
+        if table_details:
+            print(f"\n📋 DETAILED TABLE ANALYSIS")
+            print("-" * 105)
+            print(f"{'Table Name':<30} {'Row Count':<12} {'Oldest Data':<20} {'Latest Data':<20} {'Last Sync':<20}")
+            print("-" * 105)
+            
+            for table in table_details:
+                # Format table name with proper truncation
+                table_name = table.get('table_name', 'Unknown')
+                if len(table_name) > 28:  # Leave room for emoji + space
+                    table_name = table_name[:25] + "..."
+                
+                # Format row count with comma separation
+                row_count = f"{table.get('row_count', 0):,}"
+                
+                # Format dates with consistent truncation
+                oldest_date = str(table.get('oldest_date', 'N/A'))
+                if len(oldest_date) > 19:
+                    oldest_date = oldest_date[:19]
+                
+                latest_date = str(table.get('latest_date', 'N/A'))
+                if len(latest_date) > 19:
+                    latest_date = latest_date[:19]
+                
+                last_sync = str(table.get('last_sync_timestamp', 'N/A'))
+                if len(last_sync) > 19:
+                    last_sync = last_sync[:19]
+                
+                # Add emoji for populated vs empty tables
+                status_emoji = "✅" if table.get('row_count', 0) > 0 else "❌"
+                table_display = f"{status_emoji} {table_name}"
+                
+                print(f"{table_display:<30} {row_count:<12} {oldest_date:<20} {latest_date:<20} {last_sync:<20}")
+            
+            print("-" * 105)
+            
+            # Display summary statistics
+            empty_tables = [t for t in table_details if t.get('row_count', 0) == 0]
+            if empty_tables:
+                print(f"\n⚠️  Empty Tables ({len(empty_tables)}):")
+                for table in empty_tables:
+                    print(f"   • {table.get('table_name', 'Unknown')}")
+            
+            # Display top tables by record count
+            top_tables = sorted(table_details, key=lambda x: x.get('row_count', 0), reverse=True)[:5]
+            if any(t.get('row_count', 0) > 0 for t in top_tables):
+                print(f"\n🏆 Top Tables by Record Count:")
+                for i, table in enumerate(top_tables[:5], 1):
+                    if table.get('row_count', 0) > 0:
+                        print(f"   {i}. {table.get('table_name', 'Unknown')}: {table.get('row_count', 0):,} records")
+        
+        print(f"\n✅ Table Verification completed successfully!")
+        print("=" * 105)
+        
+        # Pause to allow user to review the report
+        input("\n📋 Press Enter to continue...")
 
     def handle_summary_report(self):
         """Handle summary report generation"""
@@ -292,7 +526,8 @@ class JSON2DBSyncWrapper:
         
         print("\n📋 This will generate a comprehensive summary report.")
         
-        default_db_path = "data/database/production.db"
+        config = get_config()
+        default_db_path = config.get_database_path()
         db_path = self.get_user_input("Database file path", default_db_path)
         
         if not Path(db_path).exists():
@@ -326,11 +561,10 @@ class JSON2DBSyncWrapper:
         print("   4. Verify tables")
         print("   5. Generate summary report")
         
-        # Get configuration from config system
+        # Get configuration from config system (session-based only)
         config = get_config()
         default_db_path = config.get_database_path()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
+        default_json_dir = config.get_api_sync_path()
         
         db_path = self.get_user_input("Database file path", default_db_path)
         json_dir = self.get_user_input("JSON files directory", default_json_dir)
@@ -387,7 +621,8 @@ class JSON2DBSyncWrapper:
         if not self.confirm_action("\nThis is a potentially destructive operation. Continue?"):
             return
         
-        default_db_path = "data/database/production.db"
+        config = get_config()
+        default_db_path = config.get_database_path()
         db_path = self.get_user_input("Database file path", default_db_path)
         
         if not self.confirm_action(f"\nCreate all tables in {db_path}?"):
@@ -407,8 +642,7 @@ class JSON2DBSyncWrapper:
         print("\n📝 This will generate SQL schemas without creating tables.")
         
         config = get_config()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
+        default_json_dir = config.get_api_sync_path()
         json_dir = self.get_user_input("JSON files directory", default_json_dir)
         
         if not Path(json_dir).exists():
@@ -452,11 +686,10 @@ class JSON2DBSyncWrapper:
             self.pause()
             return
         
-        # Get paths from configuration
+        # Get paths from configuration (session-based only)
         config = get_config()
         default_db_path = config.get_database_path()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
+        default_json_dir = config.get_api_sync_path()
         
         db_path = self.get_user_input("Database file path", default_db_path)
         json_dir = self.get_user_input("JSON files directory", default_json_dir)

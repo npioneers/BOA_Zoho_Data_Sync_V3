@@ -489,40 +489,49 @@ Individual module sync operations create subdirectories with their own timestamp
         return modules_data
     
     def _extract_date_range(self, data):
-        """Extract earliest and latest dates from JSON data."""
+        """Extract earliest and latest BUSINESS dates from JSON data."""
         dates = []
         
-        # Common date fields to check
-        date_fields = [
-            'last_modified_time', 'modified_time', 'created_time', 'date',
+        # Business date fields (PRIORITY ORDER - business dates first)
+        business_date_fields = [
             'invoice_date', 'bill_date', 'salesorder_date', 'purchaseorder_date',
-            'creditnote_date', 'payment_date'
+            'creditnote_date', 'payment_date', 'date'  # Generic business date
+        ]
+        
+        # System date fields (FALLBACK - only if no business dates found)
+        system_date_fields = [
+            'created_time', 'last_modified_time', 'modified_time'
         ]
         
         for record in data:
             if not isinstance(record, dict):
                 continue
                 
-            for field in date_fields:
+            found_business_date = False
+            
+            # 1. Try business dates first (HIGHEST PRIORITY)
+            for field in business_date_fields:
                 if field in record and record[field]:
                     try:
-                        # Parse various date formats
-                        date_str = record[field]
-                        if isinstance(date_str, str):
-                            # Handle ISO format and other common formats
-                            if 'T' in date_str:
-                                # Parse datetime with timezone awareness
-                                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                                # Convert to naive datetime for comparison
-                                if date_obj.tzinfo is not None:
-                                    date_obj = date_obj.replace(tzinfo=None)
-                            else:
-                                # Parse date-only format
-                                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                        date_obj = self._parse_date_string(record[field])
+                        if date_obj:
                             dates.append(date_obj)
-                    except Exception as e:
-                        # Skip invalid dates silently
+                            found_business_date = True
+                            break  # Use first business date found for this record
+                    except:
                         continue
+            
+            # 2. Only use system dates if no business date found (FALLBACK)
+            if not found_business_date:
+                for field in system_date_fields:
+                    if field in record and record[field]:
+                        try:
+                            date_obj = self._parse_date_string(record[field])
+                            if date_obj:
+                                dates.append(date_obj)
+                                break  # Use first system date found
+                        except:
+                            continue
         
         if dates:
             earliest = min(dates)
@@ -533,6 +542,26 @@ Individual module sync operations create subdirectories with their own timestamp
             }
         
         return {"earliest": "No dates", "latest": "No dates"}
+    
+    def _parse_date_string(self, date_str):
+        """Parse various date string formats into datetime object."""
+        if not isinstance(date_str, str):
+            return None
+            
+        try:
+            # Handle ISO format and other common formats
+            if 'T' in date_str:
+                # Parse datetime with timezone awareness
+                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                # Convert to naive datetime for comparison
+                if date_obj.tzinfo is not None:
+                    date_obj = date_obj.replace(tzinfo=None)
+            else:
+                # Parse date-only format
+                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            return date_obj
+        except Exception:
+            return None
     
     def _is_timestamp_dir(self, dirname):
         """Check if directory name matches timestamp format."""
@@ -816,9 +845,10 @@ def interactive_menu():
                 print("a. Fetch all modules (default - excludes 'organizations')")
                 print("b. Fetch specific module")
                 print("c. Fetch all modules including excluded ones")
+                print("d. Back to main menu")
                 
                 try:
-                    fetch_choice = input("Choose option (a/b/c): ").strip().lower()
+                    fetch_choice = input("Choose option (a/b/c/d): ").strip().lower()
                 except (EOFError, KeyboardInterrupt):
                     print("\n❌ Operation cancelled")
                     continue
@@ -975,8 +1005,13 @@ def interactive_menu():
                     except Exception as e:
                         print(f"❌ Error: {e}")
                         
+                elif fetch_choice == "d":
+                    # Back to main menu
+                    print("🔙 Returning to main menu...")
+                    continue
+                        
                 else:
-                    print("❌ Invalid choice. Please select a, b, or c.")
+                    print("❌ Invalid choice. Please select a, b, c, or d.")
             
             elif choice == "2":
                 print("\n� Quick Verify Sync Data - Comprehensive Analysis...")

@@ -31,7 +31,7 @@ class JSON2DBConfig:
             
             # Database configuration
             "database": {
-                "path": "data/database/production.db",
+                "path": "../data/database/production.db",
                 "backup_before_operations": True,
                 "connection_timeout": 30
             },
@@ -131,21 +131,34 @@ class JSON2DBConfig:
             return self._config.get(section, default)
         return self._config.get(section, {}).get(key, default)
     
+    def _resolve_path(self, path: str) -> str:
+        """Resolve relative path to absolute path"""
+        if os.path.isabs(path):
+            return path
+        
+        # Get the directory where the config file is located (json2db_sync directory)
+        config_dir = Path(__file__).parent
+        resolved_path = (config_dir / path).resolve()
+        return str(resolved_path)
+    
     def get_data_source_config(self) -> Dict[str, Any]:
         """Get complete data source configuration"""
         return self._config["data_source"]
     
     def get_database_path(self) -> str:
-        """Get database file path"""
-        return self._config["database"]["path"]
+        """Get database file path (resolved to absolute path)"""
+        relative_path = self._config["database"]["path"]
+        return self._resolve_path(relative_path)
     
     def get_api_sync_path(self) -> str:
-        """Get API sync base path"""
-        return self._config["data_source"]["api_sync_base_path"]
+        """Get API sync base path (resolved to absolute path)"""
+        relative_path = self._config["data_source"]["api_sync_base_path"]
+        return self._resolve_path(relative_path)
     
     def get_consolidated_path(self) -> str:
-        """Get consolidated JSON path"""
-        return self._config["data_source"]["consolidated_path"]
+        """Get consolidated JSON path (resolved to absolute path)"""
+        relative_path = self._config["data_source"]["consolidated_path"]
+        return self._resolve_path(relative_path)
     
     def is_api_sync_mode(self) -> bool:
         """Check if using API sync data source"""

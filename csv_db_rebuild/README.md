@@ -1,18 +1,25 @@
-# CSV to Database Rebuild Scripts
+# CSV to Database Rebuild Package
 
 **Created:** July 7, 2025  
+**Updated:** July 12, 2025  
 **Purpose:** Complete database rebuild from CSV sources with enhanced error handling and logging
 
-This folder contains production-ready scripts for rebuilding the SQLite database from CSV files with comprehensive logging, error handling, and progress tracking.
+This package contains production-ready scripts for rebuilding the SQLite database from CSV files with comprehensive logging, error handling, and progress tracking.
 
 ## 🎯 Overview
 
-These scripts were developed during the July 2025 database refactor to create a robust, maintainable system for rebuilding the production database from Zoho CSV exports.
+This package was developed during the July 2025 database refactor to create a robust, maintainable system for rebuilding the production database from Zoho CSV exports. It follows the standard package architecture with runner/wrapper separation.
 
-## 📁 Scripts
+## 📁 Package Structure
 
-### Core Scripts
-- **`simple_populator.py`** - Main population script with 100% success rate
+### Core Package Files
+- **`main_csv_db_rebuild.py`** - User interface wrapper with menu-driven functionality
+- **`runner_csv_db_rebuild.py`** - Pure business logic runner (no user interaction)
+- **`README.md`** - This documentation file
+- **`PACKAGE_CONSUMER_GUIDE.md`** - Usage guide for consumers
+
+### Legacy Scripts (Maintained for Compatibility)
+- **`simple_populator.py`** - Original population script with 100% success rate
 - **`create_database.py`** - Database creation with schema generation
 - **`create_database_schema.sql`** - Generated SQL DDL schema
 - **`table_report_generator.py`** - Generate detailed table population reports
@@ -23,58 +30,107 @@ These scripts were developed during the July 2025 database refactor to create a 
 
 ### Documentation
 - **`database_refactor_guide.md`** - Complete refactor process documentation
-- **`README.md`** - This file
 
 ## 🚀 Quick Start
 
-### 1. Create New Database
+### Method 1: Interactive Menu System (Recommended)
 ```powershell
-python create_database.py
+python csv_db_rebuild/main_csv_db_rebuild.py
 ```
-- Creates fresh `data/database/production.db` with csv_ prefixed tables
-- Generates backup of existing database
-- Creates simplified schema without indexes
+**Features:**
+- **Auto-initialization** on startup (no manual setup required)
+- Menu-driven interface for all operations
+- Configuration management with automatic re-initialization
+- Real-time status monitoring
+- User confirmation for destructive operations
+- Comprehensive error handling and reporting
 
-### 2. Populate Database
+#### Menu Options:
+1. **Clear and Populate All Tables** - Comprehensive rebuild (clear all + populate from CSV)
+2. **Populate All Tables (No Clear)** - Add data without clearing existing records
+3. **Populate Single Table** - Populate a specific table
+4. **Clear All Tables** - Remove all data from all tables
+5. **Clear Single Table** - Remove data from a specific table
+6. **Verify Table Population** - Check table status and record counts
+7. **Show System Status** - Display current configuration and system state
+8. **Configuration Settings** - Modify database paths and settings
+9. **Show Available Tables** - List all mapped tables and their CSV sources
+
+### Method 2: Programmatic Access
+```python
+# Import the runner for direct programmatic access
+from csv_db_rebuild.runner_csv_db_rebuild import CSVDatabaseRebuildRunner
+
+# Initialize runner
+runner = CSVDatabaseRebuildRunner(
+    db_path="data/database/production.db",
+    csv_dir="data/csv/Nangsel Pioneers_Latest"
+)
+
+# Option 1: Clear and populate all tables (recommended for full rebuild)
+result = runner.clear_and_populate_all_tables()
+
+# Option 2: Populate all tables (without clearing first)
+result = runner.populate_all_tables()
+
+# Check results
+print(f"Success Rate: {result['overall_success_rate']:.1f}%")
+print(f"Total Records: {result['total_records_inserted']:,}")
+```
+
+### Method 3: Legacy Script (Backward Compatibility)
 ```powershell
-python csv_db_rebuild\simple_populator.py
+python csv_db_rebuild/simple_populator.py
 ```
-**OR** using import method:
-```powershell
-python -c "import sys; sys.path.append('csv_db_rebuild'); from simple_populator import SimpleCSVPopulator; populator = SimpleCSVPopulator(); result = populator.populate_all_tables()"
-```
-- Populates all csv_ prefixed tables from CSV files
-- 100% success rate with smart primary key handling
-- Comprehensive logging and progress tracking with formatted table output
-- ~2 minutes processing time for complete database
 
-### 3. Verify Results
-```powershell
-python verify_schema.py
-```
-- Validates database structure
-- Checks record counts
-- Reports any issues
+## 🔧 Architecture
 
-## 🔧 Features
+### Runner-Wrapper Pattern
+This package follows the standard architecture pattern:
 
-### Simple Population Script
+#### Runner (`runner_csv_db_rebuild.py`)
+- **Pure business logic** with no user interaction
+- **Programmatic interface** for external systems
+- **Comprehensive logging** and error handling
+- **Configurable operations** with flexible parameters
+- **Return structured results** for downstream processing
+- **Safety protection** - only csv_ prefixed tables can be cleared
+
+#### Wrapper (`main_csv_db_rebuild.py`)
+- **User interface** with menu-driven functionality
+- **Input validation** and user confirmation
+- **Safety warnings** about which tables will be affected
+- **Interactive configuration** management
+- **Progress reporting** and status display
+- **Error handling** with user-friendly messages
+
+## 🔧 Key Features
+
+### Production-Ready Reliability
 - **100% Success Rate**: Successfully populates all 10 tables
-- **Efficient Processing**: ~2 minutes for complete database population
+- **Efficient Processing**: ~2 minutes for complete database population (31K+ records)
 - **Smart Primary Key Handling**: Automatically removes primary key constraints during insertion
 - **Comprehensive Logging**: Detailed logs with column mapping information
 - **Windows Compatible**: No emoji characters in output
 - **Graceful Error Handling**: Continues processing despite minor issues
 
-### Database Creation
-- **Schema Mirroring**: Exactly matches CSV structure with csv_ table prefixes
-- **Simplified Schema**: No indexes for performance and simplicity
-- **Automatic Backups**: Timestamp-based backup system
-- **SHM/WAL Disabled**: Journal mode set to DELETE for stability
+### Flexible Configuration
+- **Multiple Interface Options**: Interactive menu, programmatic API, or legacy scripts
+- **Configurable Paths**: Database, CSV directory, and log directory
+- **Environment Support**: Easy adaptation for dev/staging/prod environments
+- **Custom Table Mappings**: Support for custom CSV-to-table mappings
 
-### Logging System
-Generated logs in `logs/` folder:
-- **Simple Populator**: `csv_population_YYYYMMDD_HHMMSS.log` - Comprehensive execution log with detailed column mapping and progress information
+### Advanced Operations
+- **Single Table Operations**: Populate or clear individual tables
+- **Verification Tools**: Comprehensive table and data validation
+- **Status Monitoring**: Real-time progress tracking and reporting
+- **Backup Integration**: Automatic backup creation and management
+
+### Safety Features
+- **Table Protection**: Only csv_ prefixed tables can be cleared or modified
+- **Non-CSV Table Safety**: Prevents accidental clearing of other database tables
+- **Clear Safety Messages**: User warnings specify exactly which tables will be affected
+- **Operation Validation**: All operations validate table names before execution
 
 ## 📊 Expected Results
 
