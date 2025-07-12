@@ -22,11 +22,11 @@ class JSON2DBConfig:
         return {
             # Data source configuration  
             "data_source": {
-                "type": "api_sync",  # "api_sync" or "consolidated"
-                "api_sync_base_path": "../api_sync/data/sync_sessions",  # Always point to sync_sessions
-                "consolidated_path": "data/raw_json/json_compiled",
-                "prefer_session_based": True,  # Always use session-based
-                "fallback_to_traditional": False  # No fallback - always session-based
+                "type": "api_sync",  # Use api_sync session-based structure
+                "api_sync_base_path": "../api_sync/data/sync_sessions",  # Point to sync_sessions
+                "consolidated_path": "../api_sync/data/raw_json",  # Fallback to traditional structure in api_sync
+                "prefer_session_based": True,  # Use session-based structure
+                "fallback_to_traditional": True  # Allow fallback to traditional if sessions not available
             },
             
             # Database configuration

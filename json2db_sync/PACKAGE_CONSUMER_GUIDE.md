@@ -4,9 +4,10 @@
 
 The `json2db_sync` package provides robust JSON-to-Database synchronization capabilities with comprehensive data processing, validation, and verification features. This guide covers everything you need to know to effectively use this package for data consumption and synchronization operations.
 
-**Last Updated:** July 12, 2025  
+**Last Updated:** July 12, 2025 - Session-based configuration optimized  
 **Package Version:** Production Ready  
-**Architecture:** Runner/Wrapper Pattern
+**Architecture:** Runner/Wrapper Pattern  
+**Latest Fix:** Session-based data consumption now properly configured (July 12, 2025)
 
 ---
 
@@ -32,9 +33,8 @@ runner = JSON2DBSyncRunner()
 
 # Execute full sync workflow
 result = runner.full_sync_workflow(
-    db_path="data/database/production.db",
-    json_dir="data/raw_json/json_compiled",
-    cutoff_days=30
+    db_path="../data/database/production.db",
+    cutoff_days=30  # JSON directory auto-detected from session data
 )
 
 if result["success"]:
@@ -77,10 +77,10 @@ cp .env.example .env
 
 # Edit .env file with your settings
 # Key variables:
-JSON2DB_DATA_SOURCE_TYPE=api_sync           # or "consolidated"
-JSON2DB_API_SYNC_PATH=../api_sync          # Path to API sync data
+JSON2DB_DATA_SOURCE_TYPE=api_sync           # Use session-based data (recommended)
+JSON2DB_API_SYNC_PATH=../api_sync/data/sync_sessions  # Path to API sync sessions
 JSON2DB_DATABASE_PATH=../data/database/production.db
-JSON2DB_SESSION_MAX_AGE=24                 # Hours
+JSON2DB_SESSION_MAX_AGE=24                 # Hours - only process recent sessions
 ```
 
 ### Method 2: Configuration File
@@ -115,17 +115,47 @@ runner = JSON2DBSyncRunner(
 
 ## 📊 Data Sources Supported
 
-### 1. **API Sync Data** (Recommended)
-- **Location**: `../api_sync/data/sync_sessions/`
-- **Format**: Session-based JSON files with metadata
-- **Advantages**: Timestamped, verified, metadata-rich
-- **Auto-detection**: Latest successful sessions
+### Understanding Session-Based Data Structure 🔍
 
-### 2. **Consolidated JSON**
-- **Location**: `data/raw_json/json_compiled/`
-- **Format**: Consolidated JSON files
-- **Advantages**: Pre-processed, deduplicated
-- **Use Case**: When API sync not available
+The JSON2DB package is optimized for **session-based data consumption** from the API sync system:
+
+```
+../api_sync/data/sync_sessions/
+├── sync_session_2025-07-12_10-30-15/
+│   ├── raw_json/
+│   │   ├── 2025-07-12_10-30-15/     # Timestamp directory
+│   │   │   ├── invoices.json        # Actual data arrays
+│   │   │   ├── items.json
+│   │   │   └── contacts.json
+│   │   └── 2025-07-12_10-35-22/     # Another timestamp
+│   │       └── invoices.json
+│   ├── sync_metadata_invoices.json  # Metadata (not data)
+│   └── sync_metadata_items.json
+└── sync_session_2025-07-12_11-15-30/
+    └── raw_json/
+        └── 2025-07-12_11-15-30/
+            ├── invoices.json
+            └── bills.json
+```
+
+**Key Points:**
+- ✅ **Auto-Detection**: System automatically finds sessions with actual data
+- ✅ **Metadata vs Data**: Distinguishes between `sync_metadata_*.json` (metadata) and actual data files
+- ✅ **Timestamp Navigation**: Drills down to `raw_json/timestamp/` directories for actual JSON arrays
+- ✅ **Multiple Sessions**: Processes multiple sessions based on cutoff_days parameter
+
+### 1. **API Sync Data** (Recommended) ⭐
+- **Location**: `../api_sync/data/sync_sessions/`
+- **Format**: Session-based JSON files with timestamps and metadata
+- **Structure**: `sync_session_YYYY-MM-DD_HH-MM-SS/raw_json/timestamp/*.json`
+- **Advantages**: Timestamped, verified, metadata-rich, automatic session detection
+- **Auto-detection**: Latest successful sessions with actual data (not just metadata)
+
+### 2. **Consolidated JSON** (Fallback)
+- **Location**: `../api_sync/data/raw_json/` (fallback within api_sync)
+- **Format**: Traditional timestamp-based JSON files
+- **Advantages**: Pre-processed, deduplicated, simpler structure
+- **Use Case**: When session-based data not available or for legacy support
 
 ### 3. **Custom JSON Directory**
 - **Location**: User-specified path
@@ -159,12 +189,10 @@ runner.populate_tables(db_path, json_dir, cutoff_days=30)
 runner.verify_tables(db_path)
 runner.generate_summary_report(db_path)
 
-# Complete workflow (recommended)
+# Complete workflow (recommended) - auto-detects session data
 runner.full_sync_workflow(
-    db_path="production.db",
-    json_dir="json_files/",
     cutoff_days=30,
-    skip_table_creation=False
+    skip_table_creation=False  # JSON directory auto-detected from sessions
 )
 ```
 
@@ -182,11 +210,11 @@ python -m json2db_sync.main_json2db_sync
 ```
 
 ```python
-# Programmatic approach
+# Programmatic approach - uses session-based data automatically
 from json2db_sync import JSON2DBSyncRunner
 
 runner = JSON2DBSyncRunner()
-result = runner.full_sync_workflow(cutoff_days=7)
+result = runner.full_sync_workflow(cutoff_days=7)  # Auto-detects latest sessions
 ```
 
 ### 2. **Schema Updates**
@@ -206,10 +234,10 @@ python -m json2db_sync.main_json2db_sync
 
 ### 4. **Historical Data Load**
 ```python
-# Load older data with larger cutoff
+# Load older data with larger cutoff - automatically finds older sessions
 runner = JSON2DBSyncRunner()
 result = runner.full_sync_workflow(
-    cutoff_days=90,  # Load 90 days of data
+    cutoff_days=90,  # Load 90 days of session data
     skip_table_creation=True  # Keep existing schema
 )
 ```
@@ -337,10 +365,29 @@ if report["success"]:
 
 #### **Issue**: No data found
 ```
-Solution: Check data source configuration
-- Verify JSON2DB_DATA_SOURCE_TYPE
-- Ensure API sync has run successfully
-- Check file permissions
+Solution: Check session-based data configuration
+- Verify JSON2DB_DATA_SOURCE_TYPE=api_sync
+- Ensure API sync has created successful sessions
+- Check that sessions contain actual data files (not just metadata)
+- Verify file permissions on ../api_sync/data/sync_sessions/
+```
+
+#### **Issue**: "JSON file must contain an array of records"
+```
+Solution: Session structure navigation issue
+- System may be processing metadata files instead of actual data
+- Check that sessions have raw_json/timestamp/ subdirectories
+- Verify actual data files exist in timestamp directories
+- Run: python tmp_test_session_config.py (if available)
+```
+
+#### **Issue**: Only metadata files found, no actual data
+```
+Solution: Session data completeness check
+- API sync may not have completed successfully
+- Check API sync logs for completion status
+- Verify session directories contain raw_json subdirectories
+- Look for recent sessions with timestamp directories
 ```
 
 #### **Issue**: Schema conflicts
@@ -387,8 +434,8 @@ def daily_sync():
     
     runner = JSON2DBSyncRunner()
     result = runner.full_sync_workflow(
-        cutoff_days=1,  # Only yesterday's data
-        skip_table_creation=True
+        cutoff_days=1  # Only process yesterday's session data
+        # skip_table_creation=True  # Uncomment for faster daily runs
     )
     
     if result["success"]:
@@ -412,18 +459,17 @@ class DataPipeline:
     def __init__(self):
         self.json2db_runner = JSON2DBSyncRunner()
     
-    def process_json_data(self, json_directory: str):
-        # Step 1: Analyze incoming data
-        analysis = self.json2db_runner.analyze_json_files(json_directory)
+    def process_json_data(self, session_cutoff_days: int = 30):
+        # Step 1: Analyze session-based data (auto-detected)
+        analysis = self.json2db_runner.analyze_json_files()
         
         # Step 2: Update schema if needed
         if analysis.get("schema_changes_required"):
             self.json2db_runner.recreate_json_tables()
         
-        # Step 3: Load data
+        # Step 3: Load data from sessions
         result = self.json2db_runner.populate_tables(
-            json_dir=json_directory,
-            cutoff_days=30
+            cutoff_days=session_cutoff_days  # Session data auto-detected
         )
         
         # Step 4: Verify data integrity
@@ -438,28 +484,27 @@ class DataPipeline:
 
 ### 3. **Custom Configuration**
 ```python
-"""Custom configuration for specific environments"""
+"""Custom configuration for session-based environments"""
 import os
 from json2db_sync import JSON2DBSyncRunner
 
-# Production environment
+# Production environment - uses session-based data
 if os.getenv("ENVIRONMENT") == "production":
     runner = JSON2DBSyncRunner(
         db_path="/production/database/zoho_data.db",
-        data_source="/data/api_sync_production/",
         config_file="config/production.json"
+        # data_source auto-detected from ../api_sync/data/sync_sessions/
     )
 else:
-    # Development environment
+    # Development environment - also uses session data
     runner = JSON2DBSyncRunner(
         db_path="dev_database.db",
-        data_source="test_data/",
         config_file="config/development.json"
     )
 
-# Run with environment-specific settings
+# Run with environment-specific settings (session data auto-detected)
 result = runner.full_sync_workflow(
-    cutoff_days=7 if os.getenv("ENVIRONMENT") == "production" else 365
+    cutoff_days=7 if os.getenv("ENVIRONMENT") == "production" else 30
 )
 ```
 
@@ -469,46 +514,46 @@ result = runner.full_sync_workflow(
 
 ### 1. **Custom Data Filtering**
 ```python
-# Filter data by date range and entity type
+# Filter session data by date range and entity type
 runner = JSON2DBSyncRunner()
 
-# Custom filtering parameters
+# Custom filtering parameters for session-based data
 result = runner.populate_tables(
-    json_dir="data/json_files/",
-    cutoff_days=30,
-    entity_filter=["invoices", "bills"],  # Only specific entities
-    date_filter="2025-01-01"  # Only data after this date
+    cutoff_days=30,  # Process sessions from last 30 days
+    entity_filter=["invoices", "bills"],  # Only specific entities from sessions
+    # Session directories auto-detected from ../api_sync/data/sync_sessions/
 )
 ```
 
 ### 2. **Schema Customization**
 ```python
-# Custom schema generation
+# Custom schema generation from session data
 runner = JSON2DBSyncRunner()
 
 schema_result = runner.generate_table_schemas(
-    json_dir="data/",
+    # Session data auto-detected from ../api_sync/data/sync_sessions/
     include_indexes=True,
     custom_columns={
         "data_source": "TEXT DEFAULT 'json'",
-        "import_timestamp": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        "import_timestamp": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "session_id": "TEXT"  # Track which session data came from
     }
 )
 ```
 
 ### 3. **Multi-Source Data Handling**
 ```python
-# Handle multiple data sources
-sources = [
-    {"path": "../api_sync/session_1/", "type": "api_sync"},
-    {"path": "consolidated_data/", "type": "consolidated"},
-    {"path": "external_data/", "type": "custom"}
+# Handle different session age ranges or fallback to consolidated
+session_configs = [
+    {"cutoff_days": 7, "description": "Recent sessions"},
+    {"cutoff_days": 30, "description": "Monthly sessions"},
+    {"cutoff_days": 90, "description": "Quarterly sessions"}
 ]
 
-for source in sources:
-    runner = JSON2DBSyncRunner(data_source=source["path"])
-    result = runner.full_sync_workflow(cutoff_days=30)
-    print(f"Processed {source['type']}: {result['success']}")
+runner = JSON2DBSyncRunner()
+for config in session_configs:
+    result = runner.full_sync_workflow(cutoff_days=config["cutoff_days"])
+    print(f"Processed {config['description']}: {result['success']}")
 ```
 
 ---
@@ -560,6 +605,9 @@ for source in sources:
 # Check package status
 python -c "from json2db_sync import JSON2DBSyncRunner; print('Package loaded successfully')"
 
+# Test session-based configuration
+python -c "from json2db_sync.config import JSON2DBConfig; config = JSON2DBConfig(); print(f'Found {len(config.get_session_json_directories())} sessions')"
+
 # Test database connection
 python -m json2db_sync.main_json2db_sync
 # → Option 4 (Verify Tables)
@@ -567,6 +615,9 @@ python -m json2db_sync.main_json2db_sync
 # Generate diagnostic report
 python -m json2db_sync.main_json2db_sync
 # → Option 5 (Summary Report)
+
+# Check session data structure (if available)
+# python tmp_test_session_config.py
 ```
 
 ### Emergency Procedures
@@ -585,5 +636,6 @@ if not verification["success"]:
 
 **Package Status**: Production Ready ✅  
 **Last Updated**: July 12, 2025  
+**Latest Configuration Fix**: Session-based data consumption optimized for API sync integration  
 **Maintained By**: JSON2DB Sync Team  
 **Support**: See package documentation and error messages for guidance
