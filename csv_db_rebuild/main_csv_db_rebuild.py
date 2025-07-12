@@ -296,9 +296,9 @@ class CSVDatabaseRebuildMain:
             summary = self.runner.get_table_status_summary()
             
             print("\\n📋 DETAILED TABLE ANALYSIS")
-            print("-" * 105)
-            print(f"{'Table Name':<30} | {'Records':<10} | {'Oldest Data':<19} | {'Latest Data':<19} | {'Status':<10}")
-            print("-" * 105)
+            print("-" * 140)
+            print(f"{'Table Name':<30} | {'Records':<10} | {'CSV Table Created':<19} | {'Oldest Data':<19} | {'Latest Data':<19} | {'Status':<10}")
+            print("-" * 140)
             
             for table_name, status in summary['table_status'].items():
                 # Status emoji
@@ -313,17 +313,21 @@ class CSVDatabaseRebuildMain:
                 
                 # Date information
                 if status['success'] and status.get('record_count', 0) > 0:
+                    # CSV table creation timestamp
+                    table_created = str(status.get('table_created_timestamp', 'N/A'))[:19] if status.get('table_created_timestamp') else 'N/A'
+                    
                     oldest_date = str(status.get('oldest_date', 'N/A'))[:19] if status.get('oldest_date') else 'N/A'
                     latest_date = str(status.get('latest_date', 'N/A'))[:19] if status.get('latest_date') else 'N/A'
                     status_text = "OK"
                 else:
+                    table_created = 'N/A'
                     oldest_date = 'N/A'
                     latest_date = 'N/A'
                     status_text = "ERROR" if not status['success'] else "EMPTY"
                 
-                print(f"{name_with_emoji:<30} | {record_count:<10} | {oldest_date:<19} | {latest_date:<19} | {status_text:<10}")
+                print(f"{name_with_emoji:<30} | {record_count:<10} | {table_created:<19} | {oldest_date:<19} | {latest_date:<19} | {status_text:<10}")
             
-            print("-" * 105)
+            print("-" * 140)
             print(f"Summary: {summary['populated_tables']}/{summary['total_tables']} tables populated | {summary['total_records']:,} total records | {summary['population_rate']:.1f}% success rate")
             
         except Exception as e:
@@ -362,6 +366,13 @@ class CSVDatabaseRebuildMain:
                 print(f"Status: OK")
                 print(f"Record Count: {result['record_count']:,}")
                 print(f"Column Count: {result['column_count']}")
+                
+                # Display CSV table creation timestamp
+                if result.get('table_created_timestamp'):
+                    created_display = str(result['table_created_timestamp'])[:19] if result['table_created_timestamp'] else 'N/A'
+                    print(f"CSV Table Created: {created_display}")
+                else:
+                    print("CSV Table Created: N/A")
                 
                 # Display date range information if available
                 if result['record_count'] > 0 and result['date_column']:

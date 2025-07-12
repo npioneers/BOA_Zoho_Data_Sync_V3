@@ -117,6 +117,21 @@ class CSVDatabaseRebuildRunner:
                 if col in columns: 
                     return col
         
+        # Special handling for master data tables (items, contacts) - these typically don't have business dates
+        elif 'item' in table_lower:
+            # Items table is master data - check for item-specific dates first, avoid system timestamps
+            for col in ['created_date', 'item_date', 'date']:
+                if col in columns:
+                    return col
+            # For items table, prefer not to show dates since they're master data
+            return None
+            
+        elif 'contact' in table_lower:
+            # Contacts table - look for contact-specific business dates
+            for col in ['created_date', 'contact_date', 'date']:
+                if col in columns:
+                    return col
+        
         # 2. Generic business date (MEDIUM PRIORITY)
         if 'date' in columns:
             return 'date'
@@ -593,7 +608,8 @@ class CSVDatabaseRebuildRunner:
                     "column_count": 0,
                     "oldest_date": None,
                     "latest_date": None,
-                    "date_column": None
+                    "date_column": None,
+                    "table_created_timestamp": None
                 }
             
             # Get record count
@@ -610,6 +626,17 @@ class CSVDatabaseRebuildRunner:
             oldest_date = None
             latest_date = None
             date_column = None
+            table_created_timestamp = None
+            
+            # Get table creation timestamp (when CSV data was loaded)
+            if 'created_timestamp' in columns and record_count > 0:
+                try:
+                    cursor.execute(f"SELECT MIN(`created_timestamp`) FROM `{table_name}` WHERE `created_timestamp` IS NOT NULL")
+                    created_result = cursor.fetchone()
+                    table_created_timestamp = created_result[0] if created_result and created_result[0] else None
+                except Exception as e:
+                    self._log(f"Warning: Could not extract table creation timestamp from {table_name}: {str(e)}")
+                    table_created_timestamp = None
             
             # If table has data, try to get date range
             if record_count > 0:
@@ -642,7 +669,8 @@ class CSVDatabaseRebuildRunner:
                 "column_count": column_count,
                 "oldest_date": oldest_date,
                 "latest_date": latest_date,
-                "date_column": date_column
+                "date_column": date_column,
+                "table_created_timestamp": table_created_timestamp
             }
             
         except Exception as e:
@@ -654,7 +682,8 @@ class CSVDatabaseRebuildRunner:
                 "column_count": 0,
                 "oldest_date": None,
                 "latest_date": None,
-                "date_column": None
+                "date_column": None,
+                "table_created_timestamp": None
             }
     
     def get_table_status_summary(self) -> Dict[str, Any]:
