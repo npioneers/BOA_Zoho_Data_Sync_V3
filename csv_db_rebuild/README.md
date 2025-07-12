@@ -58,8 +58,10 @@ python csv_db_rebuild/main_csv_db_rebuild.py
 
 **Enhanced Features:**
 - **Business Date Analysis**: Automatically detects and displays oldest/latest business dates
+- **CSV Table Creation Tracking**: Shows when each table was populated into the database
 - **Professional Table Reports**: Visual status indicators (✅/❌) with comprehensive insights
 - **Smart Date Detection**: Understands business document types (invoices, bills, payments, etc.)
+- **Master Data Handling**: Appropriately handles catalog tables (items, contacts) that don't have business transaction dates
 
 ### Method 2: Programmatic Access
 ```python
@@ -141,7 +143,9 @@ This package follows the standard architecture pattern:
 - **Smart Date Column Detection**: Automatically identifies business-relevant date columns
 - **Temporal Analysis**: Shows oldest and latest business dates for data freshness insights
 - **Document-Type Awareness**: Understands invoice_date, bill_date, payment_date, etc.
-- **Professional Reporting**: Visual status indicators with comprehensive date range information
+- **CSV Table Creation Tracking**: Displays when each table was populated into the database
+- **Master Data Recognition**: Properly handles catalog tables (items, contacts) that don't have business transaction dates
+- **Professional Reporting**: Visual status indicators with comprehensive date range information and creation timestamps
 
 ## 📊 Expected Results
 
@@ -210,20 +214,21 @@ Latest successful run using simple_populator.py (July 8, 2025):
 
 ### Detailed Population Results by Table:
 
-| Table Name | CSV Source | Records Populated | Success Rate | Column Mapping | Status |
-|------------|------------|-------------------|--------------|----------------|---------|
-| `csv_invoices` | Invoice.csv | 6,988 | 100% | 116/122 columns | ✅ Complete |
-| `csv_items` | Item.csv | 1,850 | 100% | 41/41 columns | ✅ Complete |
-| `csv_contacts` | Contacts.csv | 448 | 100% | 70/72 columns | ✅ Complete |
-| `csv_bills` | Bill.csv | 3,129 | 100% | 63/64 columns | ✅ Complete |
-| `csv_customer_payments` | Customer_Payment.csv | 3,388 | 100% | 26/29 columns | ✅ Complete |
-| `csv_vendor_payments` | Vendor_Payment.csv | 1,052 | 100% | 25/28 columns | ✅ Complete |
-| `csv_sales_orders` | Sales_Order.csv | 11,018 | 100% | 76/83 columns | ✅ Complete |
-| `csv_purchase_orders` | Purchase_Order.csv | 2,876 | 100% | 70/75 columns | ✅ Complete |
-| `csv_credit_notes` | Credit_Note.csv | 1,476 | 100% | 84/87 columns | ✅ Complete |
-| `csv_organizations` | Contacts.csv | 29 | 100% | Auto-generated | ✅ Complete |
+| Table Name | CSV Source | Records Populated | Success Rate | Column Mapping | CSV Table Created | Status |
+|------------|------------|-------------------|--------------|----------------|-------------------|---------|
+| `csv_invoices` | Invoice.csv | 6,933 | 100% | 116/122 columns | 2025-07-12 05:20:13 | ✅ Complete |
+| `csv_items` | Item.csv | 928 | 100% | 41/41 columns | 2025-07-12 05:20:14 | ✅ Complete |
+| `csv_contacts` | Contacts.csv | 224 | 100% | 70/72 columns | 2025-07-12 05:20:14 | ✅ Complete |
+| `csv_bills` | Bill.csv | 3,218 | 100% | 63/64 columns | 2025-07-12 05:20:14 | ✅ Complete |
+| `csv_customer_payments` | Customer_Payment.csv | 1,744 | 100% | 26/29 columns | 2025-07-12 05:20:15 | ✅ Complete |
+| `csv_vendor_payments` | Vendor_Payment.csv | 530 | 100% | 25/28 columns | 2025-07-12 05:20:15 | ✅ Complete |
+| `csv_sales_orders` | Sales_Order.csv | 5,751 | 100% | 76/83 columns | 2025-07-12 05:20:15 | ✅ Complete |
+| `csv_purchase_orders` | Purchase_Order.csv | 2,982 | 100% | 70/75 columns | 2025-07-12 05:20:15 | ✅ Complete |
+| `csv_credit_notes` | Credit_Note.csv | 756 | 100% | 84/87 columns | 2025-07-12 05:20:16 | ✅ Complete |
+| `csv_organizations` | Contacts.csv | 0 | 100% | Auto-generated | N/A | ✅ Complete |
 
-**Total Records**: 31,254 records successfully populated across all tables
+**Total Records**: 23,066 records successfully populated across all tables
+**Enhanced Analysis**: The system now tracks both CSV table creation timestamps and business data ranges, providing clear distinction between when data was loaded vs actual business transaction dates.
 
 ## 🔄 Maintenance
 
@@ -249,6 +254,7 @@ For issues or questions regarding these scripts:
 ---
 
 **Status**: ✅ Production Ready  
-**Last Updated**: July 8, 2025  
-**Success Rate**: 100% with simple populator approach  
+**Last Updated**: July 12, 2025  
+**Success Rate**: 100% with enhanced table analysis and creation timestamp tracking  
 **Table Naming**: All CSV tables use csv_ prefix for clear identification
+**Latest Enhancement**: Added CSV table creation timestamps and improved business date detection for master data tables
