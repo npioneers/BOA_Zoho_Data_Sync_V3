@@ -475,7 +475,7 @@ class JSON2DBSyncRunner:
             self.logger.info(f"Generating summary report for: {target_db}")
             
             reporter = SyncSummaryReporter(target_db)
-            report = reporter.generate_full_summary()
+            report = reporter.generate_comprehensive_report()
             
             return {
                 "success": True,
