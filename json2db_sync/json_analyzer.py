@@ -66,15 +66,55 @@ class JSONAnalyzer:
     
     def _is_session_based_structure(self) -> bool:
         """Check if the data follows session-based structure"""
-        # Look for sync_sessions directory
+        # Case 1: We're pointing to the api_sync root directory
         sessions_dir = self.json_dir / "data" / "sync_sessions"
-        return sessions_dir.exists() and sessions_dir.is_dir()
+        if sessions_dir.exists() and sessions_dir.is_dir():
+            return True
+            
+        # Case 2: We're pointing directly to a session folder
+        # Check if current directory looks like a session folder and has raw_json
+        if (self.json_dir.name.startswith("sync_session_") and 
+            (self.json_dir / "raw_json").exists()):
+            return True
+            
+        # Case 3: We're pointing to the sync_sessions directory itself
+        # Check if there are session folders inside
+        if self.json_dir.name == "sync_sessions":
+            session_folders = [
+                f for f in self.json_dir.iterdir() 
+                if f.is_dir() and f.name.startswith("sync_session_")
+            ]
+            return len(session_folders) > 0
+            
+        return False
     
     def _get_latest_session_data_path(self) -> Optional[Path]:
         """Get the path to the latest session data following the Data Consumer Guide pattern"""
         if not self.session_based:
             return None
             
+        # Case 1: We're pointing directly to a session folder
+        if (self.json_dir.name.startswith("sync_session_") and 
+            (self.json_dir / "raw_json").exists()):
+            return self.json_dir / "raw_json"
+            
+        # Case 2: We're pointing to the sync_sessions directory
+        if self.json_dir.name == "sync_sessions":
+            # Find latest session folder
+            session_folders = [
+                f for f in self.json_dir.iterdir() 
+                if f.is_dir() and f.name.startswith("sync_session_")
+            ]
+            
+            if not session_folders:
+                return None
+            
+            # Sort by timestamp (newest first)
+            latest_session = sorted(session_folders, key=lambda x: x.name, reverse=True)[0]
+            raw_json_dir = latest_session / "raw_json"
+            return raw_json_dir if raw_json_dir.exists() else None
+            
+        # Case 3: We're pointing to the api_sync root directory  
         sessions_dir = self.json_dir / "data" / "sync_sessions"
         
         if not sessions_dir.exists():

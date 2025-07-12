@@ -433,24 +433,91 @@ class JSON2DBSyncRunner:
                                 # If date parsing fails, keep N/A
                                 pass
                         
-                        # Check for sync timestamp metadata
-                        if 'last_sync_time' in columns:
-                            try:
-                                cursor.execute(f"SELECT MAX(`last_sync_time`) FROM `{table_name}` WHERE `last_sync_time` IS NOT NULL")
-                                sync_result = cursor.fetchone()[0]
-                                if sync_result:
-                                    last_sync_timestamp = str(sync_result)[:19]
-                            except Exception:
-                                pass
-                        elif 'data_source' in columns:
-                            # For tables with data_source, check for most recent data source info
+                        # Check for sync timestamp metadata and data source info
+                        data_source_info = None
+                        last_modified_time = None
+                        
+                        # First check our table population tracking table
+                        try:
+                            cursor.execute("""
+                                SELECT last_populated_time, data_source 
+                                FROM table_population_tracking 
+                                WHERE table_name = ?
+                            """, (table_name,))
+                            tracking_result = cursor.fetchone()
+                            if tracking_result:
+                                last_modified_time = str(tracking_result[0])[:19]
+                                if tracking_result[1]:
+                                    data_source_info = tracking_result[1]
+                        except Exception:
+                            # Table might not exist yet, continue with other methods
+                            pass
+                        
+                        # Get data source information if not found in tracking
+                        if not data_source_info and 'data_source' in columns:
                             try:
                                 cursor.execute(f"SELECT `data_source` FROM `{table_name}` ORDER BY rowid DESC LIMIT 1")
                                 source_result = cursor.fetchone()
                                 if source_result and source_result[0]:
-                                    last_sync_timestamp = f"Source: {source_result[0]}"
+                                    data_source_info = source_result[0]
                             except Exception:
                                 pass
+                        
+                        # Check for explicit sync timestamp if not found in tracking
+                        if not last_modified_time and 'last_sync_time' in columns:
+                            try:
+                                cursor.execute(f"SELECT MAX(`last_sync_time`) FROM `{table_name}` WHERE `last_sync_time` IS NOT NULL")
+                                sync_result = cursor.fetchone()[0]
+                                if sync_result:
+                                    last_modified_time = str(sync_result)[:19]
+                            except Exception:
+                                pass
+                        
+                        # If no explicit sync time, try to find latest modification time from data
+                        if not last_modified_time and row_count > 0:
+                            # Look for common timestamp columns that might indicate last modification
+                            timestamp_columns = ['import_timestamp', 'sync_timestamp', 'last_modified_time', 'updated_at', 'modified_date', 'updated_time']
+                            for ts_col in timestamp_columns:
+                                if ts_col in columns:
+                                    try:
+                                        cursor.execute(f"SELECT MAX(`{ts_col}`) FROM `{table_name}` WHERE `{ts_col}` IS NOT NULL")
+                                        ts_result = cursor.fetchone()[0]
+                                        if ts_result:
+                                            last_modified_time = str(ts_result)[:19]
+                                            break
+                                    except Exception:
+                                        continue
+                        
+                        # If still no modification time, try to get the most recent data timestamp using business date column
+                        if not last_modified_time and row_count > 0 and primary_date_col:
+                            try:
+                                cursor.execute(f"SELECT MAX(`{primary_date_col}`) FROM `{table_name}` WHERE `{primary_date_col}` IS NOT NULL")
+                                business_result = cursor.fetchone()[0]
+                                if business_result:
+                                    last_modified_time = str(business_result)[:19]
+                            except Exception:
+                                pass
+                        
+                        # Construct the last sync information
+                        if data_source_info and last_modified_time:
+                            # Check if this is from our tracking table (recent population)
+                            try:
+                                # If the timestamp is very recent (today), it's likely from our tracking
+                                from datetime import datetime
+                                parsed_time = datetime.fromisoformat(last_modified_time.replace('T', ' '))
+                                current_time = datetime.now()
+                                time_diff = current_time - parsed_time
+                                
+                                if time_diff.total_seconds() < 86400:  # Less than 24 hours
+                                    last_sync_timestamp = f"Source: {data_source_info}, Populated: {last_modified_time}"
+                                else:
+                                    last_sync_timestamp = f"Source: {data_source_info}, Modified: {last_modified_time}"
+                            except:
+                                last_sync_timestamp = f"Source: {data_source_info}, Modified: {last_modified_time}"
+                        elif data_source_info:
+                            last_sync_timestamp = f"Source: {data_source_info}"
+                        elif last_modified_time:
+                            last_sync_timestamp = f"Modified: {last_modified_time}"
                     
                     table_details.append({
                         "table_name": table_name,

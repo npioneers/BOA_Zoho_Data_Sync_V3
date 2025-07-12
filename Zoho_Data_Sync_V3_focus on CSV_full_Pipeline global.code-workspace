@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"name": "Zoho_Data_Sync_V3",
+			"path": "."
+		}
+	],
+	"settings": {
+		"git.enabled": false,
+		"git.autoRepositoryDetection": false
+	}
+}

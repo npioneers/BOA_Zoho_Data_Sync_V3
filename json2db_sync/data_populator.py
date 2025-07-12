@@ -260,8 +260,12 @@ class JSONDataPopulator:
         cleaned_record = {}
         
         for field_name, field_value in record.items():
-            # Clean field name
-            clean_name = self.analyzer.clean_field_name(field_name)
+            # Clean field name - handle case where analyzer is None (session-based operations)
+            if self.analyzer is not None and hasattr(self.analyzer, 'clean_field_name'):
+                clean_name = self.analyzer.clean_field_name(field_name)
+            else:
+                # Fallback field name cleaning for session-based operations
+                clean_name = self._clean_field_name_fallback(field_name)
             
             # Skip if column doesn't exist in table
             if clean_name not in columns:
@@ -279,6 +283,17 @@ class JSONDataPopulator:
             else:
                 # Convert to string and handle encoding
                 cleaned_record[clean_name] = str(field_value)
+        
+        # Add import timestamp fields if they exist in the table schema
+        current_timestamp = datetime.now().isoformat()
+        import_timestamp_fields = [
+            'import_timestamp', 'sync_timestamp', 'last_sync_time', 
+            'data_import_time', 'table_sync_time'
+        ]
+        
+        for timestamp_field in import_timestamp_fields:
+            if timestamp_field in columns:
+                cleaned_record[timestamp_field] = current_timestamp
         
         return cleaned_record
 
@@ -360,6 +375,10 @@ class JSONDataPopulator:
             
             result['records_inserted'] = total_inserted
             result['success'] = True
+            
+            # Track table population time for verification reports
+            self._track_table_population(table_name, total_inserted)
+            
             self.logger.info(f"Successfully populated {table_name}: {total_inserted} records")
             
         except Exception as e:
@@ -703,23 +722,25 @@ class JSONDataPopulator:
         
         if self.json_dir.name.startswith("sync_session_"):
             # We're in a session folder, look in raw_json subdirectories
-            timestamp_dirs = self.config.get_session_json_directories(self.json_dir)
+            timestamp_dirs = self.config.get_session_json_directories(str(self.json_dir))
         else:
             # We might be in the main api_sync folder, find latest session
             latest_session = self.config.get_latest_session_folder()
             if latest_session:
                 timestamp_dirs = self.config.get_session_json_directories(latest_session)
             else:
-                return {}
+                # Fallback: try to get from current directory in case it's sync_sessions
+                timestamp_dirs = self.config.get_session_json_directories(str(self.json_dir))
         
         # Collect all JSON files across timestamp directories
         for timestamp_dir in timestamp_dirs:
             for json_file in timestamp_dir.glob("*.json"):
                 module_name = json_file.stem
-                # Prefer newer timestamp files (first in list)
+                # Prefer newer timestamp files (first in list when sorted by name desc)
                 if module_name not in json_files:
                     json_files[module_name] = json_file
         
+        self.logger.info(f"Found {len(json_files)} JSON files in session structure: {list(json_files.keys())}")
         return json_files
     
     def _get_consolidated_json_files(self) -> Dict[str, Path]:
@@ -772,15 +793,40 @@ class JSONDataPopulator:
             self.logger.warning("json_table_mapping table not found, using filename-based mapping")
             
             for module_name, file_path in json_files.items():
-                # Remove _line_items suffix for table name
-                table_name = module_name.replace('_line_items', '')
+                # Apply json_ prefix to match standard table naming convention
+                json_filename = module_name + '.json'
+                
+                # Use analyzer's mapping if available, otherwise construct with json_ prefix
+                if hasattr(self.analyzer, 'json_to_table_map') and json_filename in self.analyzer.json_to_table_map:
+                    table_name = self.analyzer.json_to_table_map[json_filename]
+                else:
+                    # Fallback: construct table name with json_ prefix
+                    base_name = module_name.replace('_line_items', '')
+                    is_line_item = module_name.endswith('_line_items')
+                    
+                    # Handle specific naming differences between JSON filenames and database table names
+                    # Only apply mapping for non-line-item tables to preserve existing line item table names
+                    if not is_line_item:
+                        name_mappings = {
+                            'customerpayments': 'customer_payments',
+                            'vendorpayments': 'vendor_payments', 
+                            'salesorders': 'sales_orders',
+                            'creditnotes': 'credit_notes'
+                        }
+                        
+                        # Apply name mapping if exists
+                        if base_name in name_mappings:
+                            base_name = name_mappings[base_name]
+                    
+                    table_name = f"json_{base_name}" + ('_line_items' if is_line_item else '')
+                
                 is_line_item = module_name.endswith('_line_items')
                 
-                table_mappings[table_name + ('_line_items' if is_line_item else '')] = {
-                    'json_file': module_name + '.json',
+                table_mappings[table_name] = {
+                    'json_file': json_filename,
                     'json_file_path': file_path,
                     'is_line_item_table': is_line_item,
-                    'table_name': table_name + ('_line_items' if is_line_item else '')
+                    'table_name': table_name
                 }
         
         finally:
@@ -1009,3 +1055,36 @@ class JSONDataPopulator:
         clean_name = re.sub(r'_+', '_', clean_name)
         clean_name = clean_name.strip('_')
         return clean_name
+    
+    def _track_table_population(self, table_name: str, records_inserted: int):
+        """Track when a table was last populated for verification reports"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Create tracking table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS table_population_tracking (
+                    table_name TEXT PRIMARY KEY,
+                    last_populated_time TEXT NOT NULL,
+                    records_count INTEGER,
+                    data_source TEXT
+                )
+            """)
+            
+            # Insert or update the tracking record
+            current_time = datetime.now().isoformat()
+            data_source = "json" if table_name.startswith("json_") else "csv"
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO table_population_tracking 
+                (table_name, last_populated_time, records_count, data_source)
+                VALUES (?, ?, ?, ?)
+            """, (table_name, current_time, records_inserted, data_source))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            # Don't fail the main operation if tracking fails
+            self.logger.warning(f"Failed to track table population for {table_name}: {e}")

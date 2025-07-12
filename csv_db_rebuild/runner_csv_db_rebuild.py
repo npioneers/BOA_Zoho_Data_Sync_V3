@@ -184,8 +184,12 @@ class CSVDatabaseRebuildRunner:
     
     def csv_to_db_column_name(self, csv_column: str) -> str:
         """Convert CSV column name to database column name (snake_case)"""
+        # First handle compound words: split CamelCase (e.g., SalesOrder -> Sales Order)
+        column = csv_column
+        column = re.sub(r'([a-z])([A-Z])', r'\1 \2', column)
+        
         # Convert spaces and special characters to underscores
-        db_column = re.sub(r'[^a-zA-Z0-9]', '_', csv_column)
+        db_column = re.sub(r'[^a-zA-Z0-9]', '_', column)
         # Convert to lowercase
         db_column = db_column.lower()
         # Remove multiple underscores

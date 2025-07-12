@@ -221,12 +221,36 @@ class JSON2DBConfig:
     def get_session_json_directories(self, session_path: Optional[str] = None) -> list:
         """Get list of directories containing JSON files from sync_sessions"""
         try:
-            # Always work with the sync_sessions directory
-            sync_sessions_path = Path(self.get_api_sync_path())
+            json_directories = []
+            
+            if session_path:
+                # We have a specific session path - work with that directly
+                session_path_obj = Path(session_path)
+                
+                # Case 1: We're pointing to a specific session folder
+                if session_path_obj.name.startswith("sync_session_"):
+                    raw_json_path = session_path_obj / "raw_json"
+                    if raw_json_path.exists():
+                        # Find timestamp directories within raw_json
+                        timestamp_dirs = [
+                            d for d in raw_json_path.iterdir() 
+                            if d.is_dir()
+                        ]
+                        json_directories.extend(timestamp_dirs)
+                    return json_directories
+                
+                # Case 2: We might be pointing to sync_sessions directory
+                elif session_path_obj.name == "sync_sessions":
+                    sync_sessions_path = session_path_obj
+                else:
+                    # Case 3: Try to interpret as a path that might contain sessions
+                    sync_sessions_path = session_path_obj
+            else:
+                # No specific path provided - use default api_sync path
+                sync_sessions_path = Path(self.get_api_sync_path())
+            
             if not sync_sessions_path.exists():
                 return []
-            
-            json_directories = []
             
             # Find all session folders
             session_folders = [

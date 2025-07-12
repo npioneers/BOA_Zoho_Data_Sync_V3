@@ -99,7 +99,7 @@
 
 *** PACKAGE STRUCTURE ***
 - each package typically contain two function stating with main_<package_name>.py and runner_<package_name>.py
-- the runner is the main background runner (purely programmatic) that takes the various options and runs the rquired functionality, 
+- the runner is the main background runner (purely programmatic) that takes the various options and runs the required functionality, 
 - the wrapper is the user encapsulation that provides the functionalities as menu items and calls the runner as per user input.
 - Runner: Pure business logic, no user interaction; Wrapper: All menus, user prompts, and calls to runner
 - ALWAYHS CREATE A README.md file inside each package explaining the project, its functions and the structure

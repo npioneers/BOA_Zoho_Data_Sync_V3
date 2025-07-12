@@ -83,6 +83,35 @@ class JSON2DBSyncWrapper:
             else:
                 print("Please enter 'y' or 'n'")
 
+    def get_default_json_directory(self) -> str:
+        """Get the appropriate default JSON directory (latest session if available)"""
+        config = get_config()
+        
+        # Try to get the latest session folder first
+        latest_session = config.get_latest_session_folder()
+        if latest_session:
+            return latest_session
+        
+        # Fallback to sync_sessions directory if no sessions found
+        return config.get_api_sync_path()
+
+    def get_json_directory_with_context(self, prompt: str = "JSON files directory") -> str:
+        """Get JSON directory input with context about session availability"""
+        config = get_config()
+        
+        # Get the latest session folder
+        latest_session = config.get_latest_session_folder()
+        if latest_session:
+            default_json_dir = latest_session
+            print(f"\n📁 Latest session found: {default_json_dir}")
+        else:
+            # Fallback to sync_sessions directory if no sessions found
+            default_json_dir = config.get_api_sync_path()
+            print(f"\n⚠️  No sessions found, using base directory: {default_json_dir}")
+            print("💡 Tip: Make sure api_sync has created session data before running operations")
+        
+        return self.get_user_input(prompt, default_json_dir)
+
     def pause(self):
         """Pause for user to read output"""
         input("\nPress Enter to continue...")
@@ -163,13 +192,7 @@ class JSON2DBSyncWrapper:
         print("\n📁 This will analyze JSON files from sync sessions to understand their structure.")
         print("💡 System is configured to always use session-based data from api_sync/data/sync_sessions")
         
-        # Get JSON directory from configuration (session-based only)
-        config = get_config()
-        default_json_dir = config.get_api_sync_path()
-        
-        print(f"\n📁 Default sync sessions path: {default_json_dir}")
-        
-        json_dir = self.get_user_input("Sync sessions directory", default_json_dir)
+        json_dir = self.get_json_directory_with_context("Sync sessions directory")
         
         if not Path(json_dir).exists():
             print(f"\n❌ Directory not found: {json_dir}")
@@ -377,7 +400,7 @@ class JSON2DBSyncWrapper:
         # Get paths from configuration (session-based only)
         config = get_config()
         db_path = config.get_database_path()
-        json_dir = config.get_api_sync_path()
+        json_dir = self.get_default_json_directory()
         
         print(f"\n📁 Database path: {db_path}")
         print(f"📁 Sync sessions path: {json_dir}")
@@ -455,15 +478,15 @@ class JSON2DBSyncWrapper:
         print(f"📊 Populated Tables: {summary.get('populated_tables', 0)}/{summary.get('total_tables', 0)}")
         print(f"📈 Total Records: {summary.get('total_records', 0):,}")
         print(f"🕒 Generated: {summary.get('generated_at', 'Unknown')[:19]}")
-        print("=" * 105)
+        print("=" * 145)
         
         # Display detailed table information
         table_details = summary.get('table_details', [])
         if table_details:
             print(f"\n📋 DETAILED TABLE ANALYSIS")
-            print("-" * 105)
-            print(f"{'Table Name':<30} {'Row Count':<12} {'Oldest Data':<20} {'Latest Data':<20} {'Last Sync':<20}")
-            print("-" * 105)
+            print("-" * 145)
+            print(f"{'Table Name':<30} {'Row Count':<12} {'Oldest Data':<20} {'Latest Data':<20} {'Last Sync':<60}")
+            print("-" * 145)
             
             for table in table_details:
                 # Format table name with proper truncation
@@ -484,16 +507,16 @@ class JSON2DBSyncWrapper:
                     latest_date = latest_date[:19]
                 
                 last_sync = str(table.get('last_sync_timestamp', 'N/A'))
-                if len(last_sync) > 19:
-                    last_sync = last_sync[:19]
+                if len(last_sync) > 58:  # Increased from 19 to accommodate enhanced format
+                    last_sync = last_sync[:55] + "..."
                 
                 # Add emoji for populated vs empty tables
                 status_emoji = "✅" if table.get('row_count', 0) > 0 else "❌"
                 table_display = f"{status_emoji} {table_name}"
                 
-                print(f"{table_display:<30} {row_count:<12} {oldest_date:<20} {latest_date:<20} {last_sync:<20}")
+                print(f"{table_display:<30} {row_count:<12} {oldest_date:<20} {latest_date:<20} {last_sync:<60}")
             
-            print("-" * 105)
+            print("-" * 145)
             
             # Display summary statistics
             empty_tables = [t for t in table_details if t.get('row_count', 0) == 0]
@@ -576,10 +599,9 @@ class JSON2DBSyncWrapper:
         # Get configuration from config system (session-based only)
         config = get_config()
         default_db_path = config.get_database_path()
-        default_json_dir = config.get_api_sync_path()
         
         db_path = self.get_user_input("Database file path", default_db_path)
-        json_dir = self.get_user_input("JSON files directory", default_json_dir)
+        json_dir = self.get_json_directory_with_context("JSON files directory")
         
         # Check paths
         if not Path(json_dir).exists():
@@ -653,9 +675,7 @@ class JSON2DBSyncWrapper:
         
         print("\n📝 This will generate SQL schemas without creating tables.")
         
-        config = get_config()
-        default_json_dir = config.get_api_sync_path()
-        json_dir = self.get_user_input("JSON files directory", default_json_dir)
+        json_dir = self.get_json_directory_with_context("JSON files directory")
         
         if not Path(json_dir).exists():
             print(f"\n❌ Directory not found: {json_dir}")
@@ -701,10 +721,9 @@ class JSON2DBSyncWrapper:
         # Get paths from configuration (session-based only)
         config = get_config()
         default_db_path = config.get_database_path()
-        default_json_dir = config.get_api_sync_path()
         
         db_path = self.get_user_input("Database file path", default_db_path)
-        json_dir = self.get_user_input("JSON files directory", default_json_dir)
+        json_dir = self.get_json_directory_with_context("JSON files directory")
         
         print(f"\n🔧 Executing custom workflow...")
         
