@@ -291,27 +291,40 @@ class CSVDatabaseRebuildMain:
             self._verify_single_table()
     
     def _verify_all_tables(self) -> None:
-        """Verify all tables"""
+        """Verify all tables with detailed date analysis"""
         try:
             summary = self.runner.get_table_status_summary()
             
-            print("\\nTABLE VERIFICATION REPORT")
-            print("=" * 60)
-            print(f"Total Tables: {summary['total_tables']}")
-            print(f"Populated Tables: {summary['populated_tables']}")
-            print(f"Population Rate: {summary['population_rate']:.1f}%")
-            print(f"Total Records: {summary['total_records']:,}")
-            print()
-            
-            print(f"{'Table Name':<25} | {'Status':<10} | {'Records':<10}")
-            print("-" * 50)
+            print("\\n📋 DETAILED TABLE ANALYSIS")
+            print("-" * 105)
+            print(f"{'Table Name':<30} | {'Records':<10} | {'Oldest Data':<19} | {'Latest Data':<19} | {'Status':<10}")
+            print("-" * 105)
             
             for table_name, status in summary['table_status'].items():
-                if status['success']:
-                    status_text = "OK" if status['record_count'] > 0 else "EMPTY"
-                    print(f"{table_name:<25} | {status_text:<10} | {status['record_count']:<10,}")
+                # Status emoji
+                status_emoji = "✅" if status.get('record_count', 0) > 0 else "❌"
+                
+                # Table name (truncated if needed)
+                display_name = table_name[:27] + "..." if len(table_name) > 30 else table_name
+                name_with_emoji = f"{status_emoji} {display_name}"
+                
+                # Record count
+                record_count = f"{status.get('record_count', 0):,}"
+                
+                # Date information
+                if status['success'] and status.get('record_count', 0) > 0:
+                    oldest_date = str(status.get('oldest_date', 'N/A'))[:19] if status.get('oldest_date') else 'N/A'
+                    latest_date = str(status.get('latest_date', 'N/A'))[:19] if status.get('latest_date') else 'N/A'
+                    status_text = "OK"
                 else:
-                    print(f"{table_name:<25} | {'ERROR':<10} | {'N/A':<10}")
+                    oldest_date = 'N/A'
+                    latest_date = 'N/A'
+                    status_text = "ERROR" if not status['success'] else "EMPTY"
+                
+                print(f"{name_with_emoji:<30} | {record_count:<10} | {oldest_date:<19} | {latest_date:<19} | {status_text:<10}")
+            
+            print("-" * 105)
+            print(f"Summary: {summary['populated_tables']}/{summary['total_tables']} tables populated | {summary['total_records']:,} total records | {summary['population_rate']:.1f}% success rate")
             
         except Exception as e:
             print(f"Verification failed: {str(e)}")
@@ -349,6 +362,22 @@ class CSVDatabaseRebuildMain:
                 print(f"Status: OK")
                 print(f"Record Count: {result['record_count']:,}")
                 print(f"Column Count: {result['column_count']}")
+                
+                # Display date range information if available
+                if result['record_count'] > 0 and result['date_column']:
+                    print(f"Business Date Column: {result['date_column']}")
+                    if result['oldest_date'] and result['latest_date']:
+                        # Format dates for display (truncate to 19 chars like in the guide)
+                        oldest_display = str(result['oldest_date'])[:19] if result['oldest_date'] else 'N/A'
+                        latest_display = str(result['latest_date'])[:19] if result['latest_date'] else 'N/A'
+                        print(f"Oldest Data: {oldest_display}")
+                        print(f"Latest Data: {latest_display}")
+                    else:
+                        print("Date Range: N/A (no valid dates found)")
+                elif result['record_count'] > 0:
+                    print("Date Range: N/A (no suitable date column found)")
+                else:
+                    print("Date Range: N/A (table is empty)")
             else:
                 print(f"Status: ERROR")
                 print(f"Error: {result['error']}")

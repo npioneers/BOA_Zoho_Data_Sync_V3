@@ -72,6 +72,62 @@ class CSVDatabaseRebuildRunner:
                 self._log(f"SAFETY WARNING: Skipping table '{table_name}' - only 'csv_' prefixed tables are allowed for operations")
         return safe_tables
     
+    def _get_business_date_column(self, table_name: str, columns: List[str]) -> Optional[str]:
+        """
+        Get the most appropriate business date column for a table.
+        Prioritizes business document dates over system sync dates.
+        
+        Args:
+            table_name: Name of the database table
+            columns: List of column names in the table
+            
+        Returns:
+            The best date column to use for oldest/latest date calculation, or None
+        """
+        table_lower = table_name.lower()
+        
+        # 1. Document-specific business dates (HIGHEST PRIORITY)
+        if 'invoice' in table_lower:
+            for col in ['invoice_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'bill' in table_lower:
+            for col in ['bill_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'salesorder' in table_lower or 'sales_order' in table_lower:
+            for col in ['salesorder_date', 'order_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'purchaseorder' in table_lower or 'purchase_order' in table_lower:
+            for col in ['purchaseorder_date', 'purchase_order_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif 'creditnote' in table_lower or 'credit_note' in table_lower:
+            for col in ['creditnote_date', 'credit_note_date', 'date']:
+                if col in columns: 
+                    return col
+                    
+        elif any(term in table_lower for term in ['payment', 'customerpayment', 'vendorpayment']):
+            for col in ['payment_date', 'date']:
+                if col in columns: 
+                    return col
+        
+        # 2. Generic business date (MEDIUM PRIORITY)
+        if 'date' in columns:
+            return 'date'
+        
+        # 3. System dates (LOWEST PRIORITY - only if no business date available)
+        for sys_date in ['created_time', 'last_modified_time', 'updated_time', 'modified_time', 'created_timestamp', 'updated_timestamp']:
+            if sys_date in columns:
+                return sys_date
+                
+        return None
+    
     def _setup_logging(self) -> None:
         """Setup logging configuration"""
         self.log_dir.mkdir(exist_ok=True)
@@ -519,7 +575,9 @@ class CSVDatabaseRebuildRunner:
         self._log("="*70)
     
     def verify_table_population(self, table_name: str) -> Dict[str, Any]:
-        """Verify that a table has been populated correctly"""
+        """
+        Verify that a table has been populated correctly and get date range information
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -528,15 +586,52 @@ class CSVDatabaseRebuildRunner:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
             if not cursor.fetchone():
                 conn.close()
-                return {"success": False, "error": "Table does not exist", "record_count": 0}
+                return {
+                    "success": False, 
+                    "error": "Table does not exist", 
+                    "record_count": 0,
+                    "column_count": 0,
+                    "oldest_date": None,
+                    "latest_date": None,
+                    "date_column": None
+                }
             
             # Get record count
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
             record_count = cursor.fetchone()[0]
             
-            # Get column count
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            column_count = len(cursor.fetchall())
+            # Get column information
+            cursor.execute(f"PRAGMA table_info(`{table_name}`)")
+            column_info = cursor.fetchall()
+            column_count = len(column_info)
+            columns = [row[1] for row in column_info]  # Column names are in position 1
+            
+            # Initialize date-related results
+            oldest_date = None
+            latest_date = None
+            date_column = None
+            
+            # If table has data, try to get date range
+            if record_count > 0:
+                # Find the best business date column
+                date_column = self._get_business_date_column(table_name, columns)
+                
+                if date_column:
+                    try:
+                        # Get oldest date
+                        cursor.execute(f"SELECT MIN(`{date_column}`) FROM `{table_name}` WHERE `{date_column}` IS NOT NULL")
+                        oldest_result = cursor.fetchone()
+                        oldest_date = oldest_result[0] if oldest_result and oldest_result[0] else None
+                        
+                        # Get latest date
+                        cursor.execute(f"SELECT MAX(`{date_column}`) FROM `{table_name}` WHERE `{date_column}` IS NOT NULL")
+                        latest_result = cursor.fetchone()
+                        latest_date = latest_result[0] if latest_result and latest_result[0] else None
+                        
+                    except Exception as date_error:
+                        self._log(f"Warning: Could not extract date range from {table_name}.{date_column}: {str(date_error)}")
+                        oldest_date = None
+                        latest_date = None
             
             conn.close()
             
@@ -544,12 +639,23 @@ class CSVDatabaseRebuildRunner:
                 "success": True,
                 "error": None,
                 "record_count": record_count,
-                "column_count": column_count
+                "column_count": column_count,
+                "oldest_date": oldest_date,
+                "latest_date": latest_date,
+                "date_column": date_column
             }
             
         except Exception as e:
             error_msg = f"Error verifying table {table_name}: {str(e)}"
-            return {"success": False, "error": error_msg, "record_count": 0}
+            return {
+                "success": False, 
+                "error": error_msg, 
+                "record_count": 0,
+                "column_count": 0,
+                "oldest_date": None,
+                "latest_date": None,
+                "date_column": None
+            }
     
     def get_table_status_summary(self) -> Dict[str, Any]:
         """Get status summary for all mapped tables"""

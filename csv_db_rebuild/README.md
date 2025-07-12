@@ -51,10 +51,15 @@ python csv_db_rebuild/main_csv_db_rebuild.py
 3. **Populate Single Table** - Populate a specific table
 4. **Clear All Tables** - Remove all data from all tables
 5. **Clear Single Table** - Remove data from a specific table
-6. **Verify Table Population** - Check table status and record counts
+6. **Verify Table Population** - Check table status and record counts with business date analysis
 7. **Show System Status** - Display current configuration and system state
 8. **Configuration Settings** - Modify database paths and settings
 9. **Show Available Tables** - List all mapped tables and their CSV sources
+
+**Enhanced Features:**
+- **Business Date Analysis**: Automatically detects and displays oldest/latest business dates
+- **Professional Table Reports**: Visual status indicators (✅/❌) with comprehensive insights
+- **Smart Date Detection**: Understands business document types (invoices, bills, payments, etc.)
 
 ### Method 2: Programmatic Access
 ```python
@@ -131,6 +136,12 @@ This package follows the standard architecture pattern:
 - **Non-CSV Table Safety**: Prevents accidental clearing of other database tables
 - **Clear Safety Messages**: User warnings specify exactly which tables will be affected
 - **Operation Validation**: All operations validate table names before execution
+
+### Business Intelligence Features
+- **Smart Date Column Detection**: Automatically identifies business-relevant date columns
+- **Temporal Analysis**: Shows oldest and latest business dates for data freshness insights
+- **Document-Type Awareness**: Understands invoice_date, bill_date, payment_date, etc.
+- **Professional Reporting**: Visual status indicators with comprehensive date range information
 
 ## 📊 Expected Results
 
