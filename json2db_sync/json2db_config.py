@@ -46,7 +46,7 @@ class JSON2DBSyncConfig:
         """Default configuration values"""
         return {
             "database": {
-                "path": "data/database/production.db",
+                "path": "../data/database/production.db",  # Corrected path to existing database
                 "connection_timeout": 30
             },
             "data_source": {
@@ -58,7 +58,7 @@ class JSON2DBSyncConfig:
             "session": {
                 "use_latest": True,
                 "max_age_hours": 24,
-                "require_successful": True,
+                "require_successful": False,  # Default to False for flexibility
                 "traditional_fallback": True
             },
             "processing": {
@@ -294,7 +294,7 @@ class JSON2DBSyncConfig:
             "_note": "Environment variables override these settings",
             "_env_prefix": "JSON2DB_",
             "database": {
-                "path": "data/database/production.db",
+                "path": "../data/database/production.db",
                 "connection_timeout": 30
             },
             "data_source": {
@@ -306,7 +306,7 @@ class JSON2DBSyncConfig:
             "session": {
                 "use_latest": True,
                 "max_age_hours": 24,
-                "require_successful": True,
+                "require_successful": False,  # Default to False for flexibility
                 "traditional_fallback": True
             },
             "processing": {

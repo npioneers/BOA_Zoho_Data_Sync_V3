@@ -16,29 +16,47 @@ try:
 except ImportError:
     from json_analyzer import JSONAnalyzer
 
+try:
+    from .enhanced_duplicate_prevention import DuplicatePreventionManager
+except ImportError:
+    from enhanced_duplicate_prevention import DuplicatePreventionManager
+
 
 class JSONDataPopulator:
-    """Populates JSON tables with filtered data from consolidated JSON files"""
+    """Populates JSON tables with filtered data from session-based or consolidated JSON files"""
     
     def __init__(self, db_path: str = None, 
                  json_dir: str = None):
-        # Import here to avoid circular imports
+        # Import configuration system
         try:
-            from .config import get_config
+            from .json2db_config import get_config
         except ImportError:
-            from config import get_config
+            from json2db_config import get_config
         
-        config = get_config()
+        self.config = get_config()
         
+        # Use provided paths or get from configuration
         if db_path is None:
-            db_path = config.get_database_path()
+            db_path = self.config.get_database_path()
         if json_dir is None:
-            json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                       else config.get_consolidated_path())
+            # For session-based, json_dir will be the session folder
+            # For consolidated, it will be the consolidated path
+            json_dir = str(self.config.get_effective_data_source_path())
             
         self.db_path = Path(db_path)
         self.json_dir = Path(json_dir)
-        self.analyzer = JSONAnalyzer(str(json_dir))
+        
+        # Detect if we're working with session-based structure
+        self.is_session_based = self._detect_session_structure()
+        
+        # Set up JSON analyzer based on structure type
+        if self.is_session_based:
+            # For session-based, we'll handle file discovery differently
+            self.analyzer = None  # Will be set up dynamically
+        else:
+            # Traditional structure - direct JSON directory
+            self.analyzer = JSONAnalyzer(str(json_dir))
+            
         self.setup_logging()
         
         # Population statistics
@@ -72,6 +90,13 @@ class JSONDataPopulator:
             'json_purchaseorders_line_items': [],
             'json_creditnotes_line_items': []
         }
+
+        # Initialize duplicate prevention manager
+        try:
+            self.duplicate_manager = DuplicatePreventionManager(str(self.db_path))
+        except Exception as e:
+            print(f"⚠️ Warning: Could not initialize duplicate prevention: {e}")
+            self.duplicate_manager = None
 
     def setup_logging(self):
         """Setup logging for population process"""
@@ -301,10 +326,112 @@ class JSONDataPopulator:
         
         return result
 
+    def populate_table_from_path(self, table_name: str, json_file_path: Path, cutoff_date: str) -> Dict[str, Any]:
+        """Populate a single table with filtered JSON data from specific file path"""
+        result = {
+            'success': False,
+            'records_inserted': 0,
+            'records_filtered': 0,
+            'total_records': 0,
+            'error': None
+        }
+        
+        try:
+            # Load JSON data from specified path
+            if not json_file_path.exists():
+                raise FileNotFoundError(f"JSON file not found: {json_file_path}")
+            
+            self.logger.info(f"Loading {json_file_path.name} from {json_file_path.parent.name} for table {table_name}")
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                all_records = json.load(f)
+            
+            if not isinstance(all_records, list):
+                raise ValueError(f"JSON file must contain an array of records")
+            
+            result['total_records'] = len(all_records)
+            
+            # Filter records by cutoff date if specified
+            filtered_records = self.filter_records_by_date(all_records, table_name, cutoff_date)
+            result['records_filtered'] = len(filtered_records)
+            
+            if not filtered_records:
+                self.logger.info(f"No records found for {table_name} after date filtering")
+                result['success'] = True
+                return result
+            
+            # Insert records into database
+            result['records_inserted'] = self.insert_records(table_name, filtered_records)
+            result['success'] = True
+            
+            self.logger.info(f"✅ Successfully populated {table_name}: {result['records_inserted']}/{result['total_records']} records")
+            
+        except Exception as e:
+            error_msg = f"Error populating {table_name}: {str(e)}"
+            self.logger.error(error_msg)
+            result['error'] = error_msg
+            
+        return result
+
+    def insert_records(self, table_name: str, records: List[Dict]) -> int:
+        """Insert a list of records into the specified table"""
+        if not records:
+            return 0
+        
+        try:
+            # Get table schema - handle both session-based and traditional structures
+            if self.analyzer is None or not hasattr(self.analyzer, 'analysis_results') or not self.analyzer.analysis_results:
+                # For session-based operations, use database schema directly
+                columns = self._get_table_columns_from_db(table_name)
+            else:
+                # Traditional structure with analyzer
+                if table_name not in self.analyzer.analysis_results:
+                    columns = self._get_table_columns_from_db(table_name)
+                else:
+                    columns = self.analyzer.analysis_results[table_name]['analysis']['columns']
+            
+            # Connect to database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Prepare INSERT statement
+            column_names = list(columns.keys())
+            placeholders = ', '.join(['?' for _ in column_names])
+            insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(column_names)}) VALUES ({placeholders})"
+            
+            # Process records in batches
+            batch_size = 100
+            total_inserted = 0
+            
+            for i in range(0, len(records), batch_size):
+                batch = records[i:i + batch_size]
+                batch_data = []
+                
+                for record in batch:
+                    cleaned_record = self.clean_record_for_insert(record, columns)
+                    # Create tuple with values in column order
+                    values = tuple(cleaned_record.get(col_name) for col_name in column_names)
+                    batch_data.append(values)
+                
+                # Execute batch insert
+                cursor.executemany(insert_sql, batch_data)
+                total_inserted += len(batch_data)
+                
+                if total_inserted % 500 == 0:
+                    self.logger.info(f"Inserted {total_inserted}/{len(records)} records into {table_name}")
+            
+            conn.commit()
+            conn.close()
+            
+            return total_inserted
+            
+        except Exception as e:
+            self.logger.error(f"Error inserting records into {table_name}: {e}")
+            return 0
+
     def populate_all_tables(self, force_recreate: bool = False) -> Dict[str, Any]:
         """Populate all JSON tables with filtered data"""
         self.stats['start_time'] = datetime.now()
-        self.logger.info("Starting JSON data population process...")
+        self.logger.info(f"Starting JSON data population process (structure: {'session-based' if self.is_session_based else 'consolidated'})...")
         
         # Get cutoff date
         cutoff_date = self.get_cutoff_date()
@@ -315,21 +442,38 @@ class JSONDataPopulator:
             self.logger.info("Force recreate enabled - clearing existing JSON data")
             self.clear_json_tables()
         
-        # Get table mapping from analyzer
-        if not self.analyzer.analysis_results:
-            self.analyzer.analyze_all_json_files()
+        # Get available JSON files and their mappings
+        if self.is_session_based:
+            # Session-based: Get files from session structure
+            json_files = self.get_available_json_files()
+            table_mappings = self._get_table_mappings_for_files(json_files)
+        else:
+            # Consolidated: Use existing analyzer approach
+            if not self.analyzer.analysis_results:
+                self.analyzer.analyze_all_json_files()
+            table_mappings = self.analyzer.analysis_results
         
         results = {}
         
         # Process tables serially
-        for table_name, table_info in self.analyzer.analysis_results.items():
+        for table_name, table_info in table_mappings.items():
             self.stats['tables_processed'] += 1
-            json_filename = table_info['json_file']
             
-            self.logger.info(f"Processing table {self.stats['tables_processed']}/{len(self.analyzer.analysis_results)}: {table_name}")
+            if self.is_session_based:
+                json_file_path = table_info['json_file_path']
+                json_filename = json_file_path.name
+            else:
+                json_filename = table_info['json_file']
+                json_file_path = self.json_dir / json_filename
+            
+            total_tables = len(table_mappings)
+            self.logger.info(f"Processing table {self.stats['tables_processed']}/{total_tables}: {table_name}")
             
             try:
-                result = self.populate_table(table_name, json_filename, cutoff_date)
+                if self.is_session_based:
+                    result = self.populate_table_from_path(table_name, json_file_path, cutoff_date)
+                else:
+                    result = self.populate_table(table_name, json_filename, cutoff_date)
                 results[table_name] = result
                 
                 if result['success']:
@@ -422,43 +566,338 @@ class JSONDataPopulator:
         
         print("="*80)
 
-
-def main():
-    """Main function for data population"""
-    import argparse
-    
-    # Get default values from configuration
-    try:
-        from config import get_config
-        config = get_config()
-        default_db_path = config.get_database_path()
-        default_json_dir = (config.get_api_sync_path() if config.is_api_sync_mode() 
-                           else config.get_consolidated_path())
-    except ImportError:
-        # Fallback to hardcoded values if config not available
-        default_db_path = "data/database/production.db"
-        default_json_dir = "data/raw_json/json_compiled"
-    
-    parser = argparse.ArgumentParser(description="JSON Data Population Tool")
-    parser.add_argument("--db-path", default=default_db_path,
-                       help="Path to the database file")
-    parser.add_argument("--json-dir", default=default_json_dir,
-                       help="Path to consolidated JSON directory")
-    parser.add_argument("--force-recreate", action="store_true",
-                       help="Clear existing data before population")
-    
-    args = parser.parse_args()
-    
-    populator = JSONDataPopulator(args.db_path, args.json_dir)
-    
-    try:
-        results = populator.populate_all_tables(args.force_recreate)
-        populator.print_population_summary(results)
+    def _detect_session_structure(self) -> bool:
+        """Detect if we're working with a session-based structure"""
+        # Check if json_dir is a session folder
+        if self.json_dir.name.startswith("sync_session_"):
+            return True
         
-    except Exception as e:
-        logging.error(f"Data population failed: {str(e)}")
-        raise
+        # Check if json_dir contains session folders
+        if (self.json_dir / "data" / "sync_sessions").exists():
+            return True
+            
+        # Check if it has raw_json subdirectory with timestamp folders (session structure)
+        raw_json_dir = self.json_dir / "raw_json"
+        if raw_json_dir.exists():
+            # Look for timestamp directories
+            timestamp_dirs = [
+                d for d in raw_json_dir.iterdir() 
+                if d.is_dir() and d.name.count('-') == 4  # YYYY-MM-DD_HH-MM-SS format
+            ]
+            if timestamp_dirs:
+                return True
+        
+        return False
+    
+    def _get_session_json_files(self) -> Dict[str, Path]:
+        """Get all JSON files from session-based structure"""
+        json_files = {}
+        
+        if self.json_dir.name.startswith("sync_session_"):
+            # We're in a session folder, look in raw_json subdirectories
+            timestamp_dirs = self.config.get_session_json_directories(self.json_dir)
+        else:
+            # We might be in the main api_sync folder, find latest session
+            latest_session = self.config.get_latest_session_folder()
+            if latest_session:
+                timestamp_dirs = self.config.get_session_json_directories(latest_session)
+            else:
+                return {}
+        
+        # Collect all JSON files across timestamp directories
+        for timestamp_dir in timestamp_dirs:
+            for json_file in timestamp_dir.glob("*.json"):
+                module_name = json_file.stem
+                # Prefer newer timestamp files (first in list)
+                if module_name not in json_files:
+                    json_files[module_name] = json_file
+        
+        return json_files
+    
+    def _get_consolidated_json_files(self) -> Dict[str, Path]:
+        """Get all JSON files from consolidated structure"""
+        json_files = {}
+        
+        # Direct JSON files in the directory
+        for json_file in self.json_dir.glob("*.json"):
+            module_name = json_file.stem
+            json_files[module_name] = json_file
+        
+        return json_files
+    
+    def get_available_json_files(self) -> Dict[str, Path]:
+        """Get all available JSON files based on structure type"""
+        if self.is_session_based:
+            return self._get_session_json_files()
+        else:
+            return self._get_consolidated_json_files()
+    
+    def _get_table_mappings_for_files(self, json_files: Dict[str, Path]) -> Dict[str, Dict]:
+        """Get table mappings for session-based JSON files"""
+        table_mappings = {}
+        
+        # Database-driven mapping (preserving existing database table mapping system)
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        try:
+            # Get table mappings from database if they exist
+            cursor.execute("""
+                SELECT json_file, table_name, is_line_item_table 
+                FROM json_table_mapping 
+                WHERE json_file IN ({})
+            """.format(','.join(['?' for _ in json_files.keys()])), list(json_files.keys()))
+            
+            db_mappings = cursor.fetchall()
+            
+            for json_file, table_name, is_line_item in db_mappings:
+                if json_file in json_files:
+                    table_mappings[table_name] = {
+                        'json_file': json_file,
+                        'json_file_path': json_files[json_file],
+                        'is_line_item_table': bool(is_line_item),
+                        'table_name': table_name
+                    }
+                    
+        except sqlite3.OperationalError:
+            # If json_table_mapping table doesn't exist, fall back to filename-based mapping
+            self.logger.warning("json_table_mapping table not found, using filename-based mapping")
+            
+            for module_name, file_path in json_files.items():
+                # Remove _line_items suffix for table name
+                table_name = module_name.replace('_line_items', '')
+                is_line_item = module_name.endswith('_line_items')
+                
+                table_mappings[table_name + ('_line_items' if is_line_item else '')] = {
+                    'json_file': module_name + '.json',
+                    'json_file_path': file_path,
+                    'is_line_item_table': is_line_item,
+                    'table_name': table_name + ('_line_items' if is_line_item else '')
+                }
+        
+        finally:
+            conn.close()
+        
+        return table_mappings
 
+    def populate_session_safely(self, session_path: str = None, modules: List[str] = None, force_reprocess: bool = False) -> Dict[str, Any]:
+        """Safely populate data from a session with comprehensive duplicate prevention"""
+        
+        # Use current session if none specified
+        if session_path is None:
+            if self.is_session_based:
+                session_path = str(self.json_dir)
+            else:
+                return {'success': False, 'error': 'No session path provided and not in session-based mode'}
+        
+        session_id = Path(session_path).name
+        
+        # Check duplicate prevention manager
+        if not self.duplicate_manager:
+            print("⚠️ Warning: No duplicate prevention - proceeding without session tracking")
+            return self._populate_session_basic(session_path, modules)
+        
+        # Check if session already processed
+        if not force_reprocess and self.duplicate_manager.is_session_processed(session_id, session_path):
+            self.logger.info(f"Session {session_id} already processed successfully")
+            return {
+                'success': True,
+                'skipped': True,
+                'message': f'Session {session_id} already processed',
+                'session_id': session_id,
+                'records_processed': 0
+            }
+        
+        # Start session processing
+        if not force_reprocess and not self.duplicate_manager.start_session_processing(session_id, session_path):
+            return {
+                'success': False,
+                'error': 'Session already being processed or completed',
+                'session_id': session_id,
+                'records_processed': 0
+            }
+        
+        try:
+            self.logger.info(f"Starting safe population of session: {session_id}")
+            total_records = 0
+            processed_modules = []
+            files_processed = 0
+            
+            # Get JSON files from session
+            if self.is_session_based:
+                json_files_dict = self._get_session_json_files()
+            else:
+                # Handle traditional structure  
+                json_files_dict = self._get_traditional_json_files()
+            
+            # Filter modules if specified
+            if modules:
+                filtered_dict = {}
+                for k, v in json_files_dict.items():
+                    if any(module.lower() in str(v).lower() for module in modules):
+                        filtered_dict[k] = v
+                json_files_dict = filtered_dict
+            
+            self.logger.info(f"Processing {len(json_files_dict)} files from session")
+            
+            for file_key, file_path in json_files_dict.items():
+                try:
+                    # Determine table name from file
+                    table_name = f"json_{file_path.stem}"
+                    
+                    # Check if this specific file was already processed
+                    if (not force_reprocess and 
+                        self.duplicate_manager.is_file_processed(table_name, str(file_path), session_id)):
+                        self.logger.info(f"File {file_path.name} already processed, skipping")
+                        continue
+                    
+                    # Process the file
+                    cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                    result = self.populate_table_from_path(table_name, file_path, cutoff_date)
+                    
+                    if result.get('success'):
+                        records_processed = result.get('records_inserted', 0)
+                        total_records += records_processed
+                        files_processed += 1
+                        
+                        # Track file processing
+                        self.duplicate_manager.track_file_processing(
+                            table_name, str(file_path), records_processed, session_id
+                        )
+                        
+                        processed_modules.append(file_path.stem)
+                        self.logger.info(f"✅ Processed {file_path.stem}: {records_processed} records")
+                    else:
+                        self.logger.error(f"❌ Failed to process {file_path.name}: {result.get('error')}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error processing file {file_path}: {e}")
+                    continue
+            
+            # Mark session as completed
+            if self.duplicate_manager:
+                self.duplicate_manager.complete_session_processing(session_id, total_records, processed_modules)
+            
+            self.logger.info(f"✅ Session processing completed: {total_records} total records, {files_processed} files")
+            
+            return {
+                'success': True,
+                'session_id': session_id,
+                'records_processed': total_records,
+                'modules_processed': processed_modules,
+                'files_processed': files_processed,
+                'duplicate_prevention': True
+            }
+            
+        except Exception as e:
+            # Mark session as failed
+            if self.duplicate_manager:
+                self.duplicate_manager.fail_session_processing(session_id, str(e))
+            
+            self.logger.error(f"❌ Session processing failed: {e}")
+            
+            return {
+                'success': False,
+                'error': str(e),
+                'session_id': session_id,
+                'records_processed': total_records if 'total_records' in locals() else 0
+            }
+    
+    def _populate_session_basic(self, session_path: str, modules: List[str] = None) -> Dict[str, Any]:
+        """Basic session population without duplicate prevention (fallback)"""
+        try:
+            total_records = 0
+            processed_modules = []
+            
+            # Get JSON files
+            if self.is_session_based:
+                json_files_dict = self._get_session_json_files()
+            else:
+                json_files_dict = self._get_traditional_json_files()
+            
+            # Filter modules if specified
+            if modules:
+                filtered_dict = {}
+                for k, v in json_files_dict.items():
+                    if any(module.lower() in str(v).lower() for module in modules):
+                        filtered_dict[k] = v
+                json_files_dict = filtered_dict
+            
+            for file_key, file_path in json_files_dict.items():
+                table_name = f"json_{file_path.stem}"
+                cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                result = self.populate_table_from_path(table_name, file_path, cutoff_date)
+                
+                if result.get('success'):
+                    records_processed = result.get('records_inserted', 0)
+                    total_records += records_processed
+                    processed_modules.append(file_path.stem)
+            
+            return {
+                'success': True,
+                'records_processed': total_records,
+                'modules_processed': processed_modules,
+                'files_processed': len(json_files_dict),
+                'duplicate_prevention': False
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def _get_traditional_json_files(self) -> Dict[str, Path]:
+        """Get JSON files from traditional structure"""
+        json_files = {}
+        
+        if self.json_dir.exists():
+            for json_file in self.json_dir.glob("*.json"):
+                json_files[json_file.stem] = json_file
+        
+        return json_files
+    
+    def get_duplicate_prevention_stats(self) -> Dict[str, Any]:
+        """Get duplicate prevention statistics"""
+        if not self.duplicate_manager:
+            return {'error': 'Duplicate prevention not initialized'}
+        
+        return self.duplicate_manager.get_processing_stats()
+    
+    def _get_table_columns_from_db(self, table_name: str) -> Dict[str, Dict]:
+        """Get table column information directly from database schema"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get table schema
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            schema_info = cursor.fetchall()
+            
+            if not schema_info:
+                conn.close()
+                raise ValueError(f"Table {table_name} not found in database")
+            
+            # Convert to format expected by the rest of the code
+            columns = {}
+            for row in schema_info:
+                col_name = row[1]  # column name
+                col_type = row[2]  # column type
+                columns[col_name] = {
+                    'type': col_type,
+                    'nullable': not bool(row[3])  # not null flag
+                }
+            
+            conn.close()
+            return columns
+            
+        except Exception as e:
+            self.logger.error(f"Error getting columns for table {table_name}: {e}")
+            return {}
 
-if __name__ == "__main__":
-    main()
+    def _clean_field_name_fallback(self, field_name: str) -> str:
+        """Clean field name when analyzer is not available"""
+        import re
+        # Basic field name cleaning similar to JSONAnalyzer
+        clean_name = field_name.lower()
+        clean_name = re.sub(r'[^a-z0-9_]', '_', clean_name)
+        clean_name = re.sub(r'_+', '_', clean_name)
+        clean_name = clean_name.strip('_')
+        return clean_name
