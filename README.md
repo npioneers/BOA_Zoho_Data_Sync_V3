@@ -53,8 +53,8 @@ python direct_differential_build.py --apply      # Apply changes only
 
 **JSON-to-Database Sync:**
 ```bash
-python main_json2db.py sync     # Full sync
-python main_json2db.py status   # Check status
+python -m json2db_sync.main_json2db_sync        # Interactive menu
+python -m json2db_sync.runner_json2db_sync      # Programmatic access
 ```
 
 **JSON Consolidation (with Freshness Check):**
@@ -111,13 +111,16 @@ json_consolidate/           # JSON file consolidation with freshness check
 └── README.md             # Detailed documentation
 ```
 
-**JSON Sync Pipeline:**
+**JSON2DB Sync Pipeline:**
 ```
-src/json_sync/           # JSON-to-database sync
-├── orchestrator/
-│   └── cli.py          # Command interface
-├── transformers/        # Data transformation
-└── database/           # Database operations
+json2db_sync/               # JSON-to-database sync
+├── main_json2db_sync.py   # Interactive wrapper interface
+├── runner_json2db_sync.py # Pure business logic runner
+├── config.py              # Configuration management
+├── json_analyzer.py       # JSON file analysis
+├── table_generator.py     # SQL schema generation
+├── data_populator.py      # Data loading operations
+└── summary_reporter.py    # Reporting and statistics
 ```
 
 **API Sync Pipeline:**
@@ -136,10 +139,11 @@ src/api_sync/           # API sync with verification
 ```
 
 **Entry Points:**
-- `main_json2db.py` - JSON-to-database operations
-- `main_json_consolidate.py` - JSON consolidation with freshness check
-- `main_api_sync.py` - High-level API sync wrapper
-- Direct CLI access via `python -m src.api_sync.cli`
+- `main_api_sync.py` - High-level API sync wrapper (legacy root entry)
+- `api_sync/main_api_sync.py` - API sync operations with interactive menu
+- `json2db_sync/main_json2db_sync.py` - JSON-to-database operations
+- `json_consolidate/main_json_consolidate.py` - JSON consolidation entry point
+- Direct CLI access via `python -m api_sync.cli`
 
 ## 📊 Verification System
 
@@ -198,22 +202,22 @@ python main_api_sync.py sync --modules invoices,bills,contacts
 python main_api_sync.py sync --timeout 1800
 
 # JSON-to-database sync
-python main_json2db.py sync
+python -m json2db_sync.main_json2db_sync
 
-# Check JSON sync status
-python main_json2db.py status
+# Check JSON sync capabilities  
+python -m json2db_sync.main_json2db_sync
 ```
 
-### Direct CLI Access (Advanced)
+### Direct CLI access (Advanced)
 ```bash
 # Fetch specific module with date filter
-python -m src.api_sync.cli fetch invoices --since 2025-01-01
+python -m api_sync.cli fetch invoices --since 2025-01-01
 
 # Run verification
-python -m src.api_sync.cli verify
+python -m api_sync.cli verify
 
-# JSON sync via direct CLI
-python -m src.json_sync sync
+# JSON sync via interactive menu
+python -m json2db_sync.main_json2db_sync
 ```
 
 ## � Data Structure
@@ -244,7 +248,7 @@ data/
     production.db               # SQLite database with canonical schema
 ## 🛠️ Configuration
 
-### API Sync Configuration (`src/api_sync/.env`)
+### API Sync Configuration (`api_sync/.env`)
 ```bash
 # Copy from .env.example and configure:
 GCP_PROJECT_ID=your-project-id
@@ -252,6 +256,14 @@ ZOHO_CLIENT_ID=your-client-id
 ZOHO_CLIENT_SECRET=your-client-secret
 ZOHO_REFRESH_TOKEN=your-refresh-token
 ZOHO_ORGANIZATION_ID=your-org-id
+```
+
+### JSON2DB Sync Configuration (`json2db_sync/.env`)
+```bash
+# Copy from .env.example and configure:
+DATABASE_PATH=data/database/production.db
+JSON_SOURCE_PATH=data/raw_json
+DEFAULT_CUTOFF_DAYS=30
 ```
 
 ### System Configuration (`config/settings.yaml`)
@@ -303,23 +315,28 @@ logging:
 
 ```
 Zoho_Data_Sync/
-├── main_api_sync.py              # High-level API sync wrapper
-├── main_json2db.py               # JSON-to-database entry point
-├── main_json_consolidate.py      # JSON consolidation entry point
+├── main_api_sync.py              # Legacy high-level API sync wrapper
 ├── json_consolidate/             # JSON consolidation package
 │   ├── json_consolidator.py     # Consolidation logic with freshness check
 │   ├── __init__.py              # Package interface
 │   └── README.md                # Package documentation
-├── src/
-│   ├── api_sync/                 # API sync pipeline
-│   │   ├── cli.py               # Command interface
-│   │   ├── core/                # API communication
-│   │   ├── processing/          # Data processing
-│   │   └── verification/        # Multi-mode verification
-│   └── json_sync/               # JSON-to-database pipeline
-│       ├── orchestrator/
-│       ├── transformers/
-│       └── database/
+├── api_sync/                     # API sync pipeline
+│   ├── main_api_sync.py         # Interactive wrapper interface  
+│   ├── runner_api_sync.py       # Pure business logic runner
+│   ├── cli.py                   # Command interface
+│   ├── core/                    # API communication
+│   ├── processing/              # Data processing
+│   └── verification/            # Multi-mode verification
+├── json2db_sync/                # JSON-to-database pipeline
+│   ├── main_json2db_sync.py     # Interactive wrapper interface
+│   ├── runner_json2db_sync.py   # Pure business logic runner
+│   ├── config.py                # Configuration management
+│   ├── json_analyzer.py         # JSON file analysis
+│   ├── table_generator.py       # SQL schema generation
+│   ├── data_populator.py        # Data loading operations
+│   └── summary_reporter.py      # Reporting and statistics
+├── csv_db_rebuild/              # CSV database rebuild package
+├── json_db_mapper/              # JSON-DB mapping package  
 ├── data/
 │   ├── raw_json/                # API fetch results
 │   │   └── json_compiled/       # Consolidated & deduplicated files
@@ -340,9 +357,9 @@ Zoho_Data_Sync/
 
 ### Command Help
 ```bash
-python main_api_sync.py --help
-python main_json2db.py --help
-python -m src.api_sync.cli --help
+python -m api_sync.main_api_sync --help
+python -m json2db_sync.main_json2db_sync --help
+python -m api_sync.cli --help
 ```
 
 **Status**: Production ready system with comprehensive testing and documentation.
