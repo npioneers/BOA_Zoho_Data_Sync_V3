@@ -37,6 +37,7 @@
 - **Streamlined Menu:** Primary action (Clear and Populate All Tables) is now menu option 1
 - **Enhanced Functionality:** New clear-and-populate operation combines clearing and populating in one step
 - **Safety Protection:** Only csv_* prefixed tables can be cleared - other database tables are protected
+- **Business Date Analysis:** Intelligent date range detection showing oldest/latest business dates per table
 
 ## 📋 PACKAGE OVERVIEW
 
@@ -114,6 +115,12 @@ TABLE_MAPPINGS = {
 - **Non-CSV Table Protection:** Prevents accidental clearing of other database tables
 - **Safety Logging:** Logs warnings when non-csv tables are filtered out
 - **User Safety Messages:** Clear warnings about which tables will be affected
+
+#### 5. Business Intelligence & Analysis
+- **Smart Date Column Detection:** Automatically identifies business-relevant date columns per table type
+- **Temporal Range Analysis:** Shows oldest and latest business dates for data freshness insights
+- **Professional Table Analysis:** Visual status indicators with comprehensive date range information
+- **Document-Type Awareness:** Understands invoice_date, bill_date, payment_date, etc. for intelligent analysis
 
 ## 📊 DATABASE SCHEMA DESIGN
 
