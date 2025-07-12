@@ -644,10 +644,27 @@ class JSONDataPopulator:
         self.stats['end_time'] = datetime.now()
         self.logger.info(f"JSON data population with {cutoff_days} day cutoff completed")
         
+        # Add session information for reporting
+        session_info = self._get_session_info()
+        
+        # Add detailed table statistics
+        table_stats = {}
+        total_records = 0
+        for table_name, result in results.items():
+            if result.get('success', False):
+                records = result.get('records_inserted', 0)
+                table_stats[table_name] = records
+                total_records += records
+        
         return {
             'success': self.stats['tables_failed'] == 0,
             'stats': self.stats,
-            'table_results': results
+            'table_results': results,
+            'session_info': session_info,
+            'table_statistics': table_stats,
+            'total_records': total_records,
+            'total_tables': len(table_mappings),
+            'total_json_files': len(json_files) if 'json_files' in locals() else len(table_mappings)
         }
 
     def clear_json_tables(self):
@@ -1094,3 +1111,50 @@ class JSONDataPopulator:
         except Exception as e:
             # Don't fail the main operation if tracking fails
             self.logger.warning(f"Failed to track table population for {table_name}: {e}")
+
+    def _get_session_info(self) -> Dict[str, Any]:
+        """Get information about the current session being used"""
+        session_info = {
+            "selected_session": "Unknown",
+            "session_has_data": False,
+            "all_sessions": [],
+            "rejected_sessions": []
+        }
+        
+        try:
+            if self.is_session_based and hasattr(self, 'config'):
+                # Get the selected session
+                latest_session = self.config.get_latest_session_folder()
+                if latest_session:
+                    session_path = Path(latest_session)
+                    session_info["selected_session"] = session_path.name
+                    session_info["session_has_data"] = self.config._session_has_data_files(session_path)
+                
+                # Get all available sessions for comparison
+                api_sync_path = Path(self.config.get_api_sync_path())
+                if api_sync_path.exists():
+                    all_sessions = [
+                        f for f in api_sync_path.iterdir() 
+                        if f.is_dir() and f.name.startswith("sync_session_")
+                    ]
+                    
+                    # Sort by modification time (newest first)
+                    sorted_sessions = sorted(all_sessions, key=lambda x: x.stat().st_mtime, reverse=True)
+                    
+                    for session in sorted_sessions:
+                        has_data = self.config._session_has_data_files(session)
+                        session_entry = {
+                            "name": session.name,
+                            "has_data": has_data,
+                            "selected": session.name == session_info["selected_session"]
+                        }
+                        
+                        if has_data:
+                            session_info["all_sessions"].append(session_entry)
+                        else:
+                            session_info["rejected_sessions"].append(session_entry)
+        
+        except Exception as e:
+            session_info["error"] = str(e)
+        
+        return session_info

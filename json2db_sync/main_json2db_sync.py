@@ -38,18 +38,59 @@ class JSON2DBSyncWrapper:
         if result.get("success"):
             print(f"\n✅ {operation} completed successfully!")
             
-            # Print statistics if available
+            # Print enhanced session information if available
+            session_info = result.get("session_info", {})
+            if session_info and session_info.get("selected_session") != "Unknown":
+                print(f"\n🗂️  Session Information:")
+                print(f"   • Selected Session: {session_info['selected_session']}")
+                print(f"   • Session Has Data: {'✅ Yes' if session_info['session_has_data'] else '❌ No'}")
+                
+                # Show session comparison
+                all_sessions = session_info.get("all_sessions", [])
+                rejected_sessions = session_info.get("rejected_sessions", [])
+                
+                if all_sessions or rejected_sessions:
+                    print(f"   • Available Sessions with Data: {len(all_sessions)}")
+                    if rejected_sessions:
+                        print(f"   • Rejected Sessions (metadata only): {len(rejected_sessions)}")
+                        for reject in rejected_sessions[:3]:  # Show first 3
+                            print(f"     - {reject['name']} (no data files)")
+                        if len(rejected_sessions) > 3:
+                            print(f"     ... and {len(rejected_sessions) - 3} more")
+            
+            # Print file and record statistics
+            total_files = result.get("total_json_files", 0)
+            total_records = result.get("total_records", 0)
+            total_tables = result.get("total_tables", 0)
+            
+            if total_files > 0 or total_records > 0:
+                print(f"\n📊 Processing Summary:")
+                if total_files > 0:
+                    print(f"   • JSON Files Found: {total_files} (instead of 0)")
+                print(f"   • Total Records Processed: {total_records}")
+                print(f"   • Tables Updated: {total_tables}")
+            
+            # Print detailed table statistics
+            table_stats = result.get("table_statistics", {})
+            if table_stats:
+                print(f"\n� Per-Table Record Counts:")
+                # Sort tables by record count (highest first)
+                sorted_tables = sorted(table_stats.items(), key=lambda x: x[1], reverse=True)
+                for table_name, count in sorted_tables:
+                    print(f"   • {table_name}: {count} records")
+            
+            # Print legacy statistics if available
             stats = result.get("statistics", {})
             if stats:
-                print("\n📊 Statistics:")
+                print("\n📈 Additional Statistics:")
                 for key, value in stats.items():
-                    if isinstance(value, (int, float)):
+                    if isinstance(value, (int, float)) and key not in ['total_records', 'total_tables']:
                         print(f"   • {key.replace('_', ' ').title()}: {value}")
             
             # Print completion time
             completed_at = result.get("completed_at")
             if completed_at:
-                print(f"   • Completed at: {completed_at}")
+                print(f"\n⏰ Completed at: {completed_at}")
                 
         else:
             print(f"\n❌ {operation} failed!")

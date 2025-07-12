@@ -541,9 +541,13 @@ class GlobalSyncRunner:
                 try:
                     # Define the JSON2DB sync execution function
                     def _execute_json2db_sync():
-                        # Let JSON2DB sync handle everything with its own defaults
+                        # Use proper parameters to ensure enhanced reporting works
                         # This will use session-based data, 30-day cutoff, and duplicate prevention
-                        return json2db_runner.populate_tables()
+                        return json2db_runner.populate_tables(
+                            db_path=None,  # Use default from config
+                            json_dir=None,  # Use default from config  
+                            cutoff_days=30  # Ensure cutoff is applied for enhanced reporting
+                        )
                     
                     # Execute JSON2DB sync in its own directory
                     json2db_result = self._execute_in_package_directory('json2db_sync', _execute_json2db_sync)

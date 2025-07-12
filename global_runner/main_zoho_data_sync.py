@@ -216,7 +216,80 @@ class GlobalSyncWrapper:
         if sync_result.get("freshness_check_result"):
             print()  # Add spacing
             self.display_freshness_status(sync_result["freshness_check_result"])
+        
+        # Show JSON2DB sync enhanced reporting if available
+        if sync_result.get("json2db_sync_result"):
+            print()  # Add spacing
+            self.display_json2db_results(sync_result["json2db_sync_result"])
     
+    def display_json2db_results(self, json2db_result: Dict[str, Any]) -> None:
+        """Display JSON2DB sync enhanced reporting results"""
+        self._print_subheader("JSON2DB Sync Details")
+        
+        if not json2db_result.get("success", False):
+            self._print_status("JSON2DB sync failed", "error")
+            error = json2db_result.get("error", "Unknown error")
+            print(f"Error: {error}")
+            return
+        
+        self._print_status("JSON2DB sync completed successfully", "success")
+        
+        # Display enhanced session information if available
+        session_info = json2db_result.get("session_info", {})
+        if session_info and session_info.get("selected_session") != "Unknown":
+            print(f"\n🗂️  Session Information:")
+            print(f"   • Selected Session: {session_info['selected_session']}")
+            print(f"   • Session Has Data: {'✅ Yes' if session_info['session_has_data'] else '❌ No'}")
+            
+            # Show session comparison
+            all_sessions = session_info.get("all_sessions", [])
+            rejected_sessions = session_info.get("rejected_sessions", [])
+            
+            if all_sessions or rejected_sessions:
+                print(f"   • Available Sessions with Data: {len(all_sessions)}")
+                if rejected_sessions:
+                    print(f"   • Rejected Sessions (metadata only): {len(rejected_sessions)}")
+                    for reject in rejected_sessions[:3]:  # Show first 3
+                        print(f"     - {reject['name']} (no data files)")
+                    if len(rejected_sessions) > 3:
+                        print(f"     ... and {len(rejected_sessions) - 3} more")
+        
+        # Display file and record statistics
+        total_files = json2db_result.get("total_json_files", 0)
+        total_records = json2db_result.get("total_records", 0)
+        total_tables = json2db_result.get("total_tables", 0)
+        
+        if total_files > 0 or total_records > 0:
+            print(f"\n📊 Processing Summary:")
+            if total_files > 0:
+                print(f"   • JSON Files Found: {total_files} (instead of 0)")
+            print(f"   • Total Records Processed: {total_records}")
+            print(f"   • Tables Updated: {total_tables}")
+        
+        # Display per-table statistics if available
+        table_stats = json2db_result.get("table_statistics", {})
+        if table_stats and any(count > 0 for count in table_stats.values()):
+            print(f"\n📋 Per-Table Record Counts:")
+            # Sort tables by record count (highest first) and show only tables with records
+            sorted_tables = sorted(table_stats.items(), key=lambda x: x[1], reverse=True)
+            tables_with_data = [(name, count) for name, count in sorted_tables if count > 0]
+            
+            if tables_with_data:
+                for table_name, count in tables_with_data[:10]:  # Show top 10
+                    print(f"   • {table_name}: {count} records")
+                if len(tables_with_data) > 10:
+                    print(f"   ... and {len(tables_with_data) - 10} more tables")
+            
+            # Show summary of empty tables if any
+            empty_tables = [(name, count) for name, count in sorted_tables if count == 0]
+            if empty_tables:
+                print(f"\n   📝 Note: {len(empty_tables)} tables had no new records to process")
+        
+        # Show completion time
+        completed_at = json2db_result.get("completed_at")
+        if completed_at:
+            print(f"\n⏰ Completed at: {completed_at}")
+
     def display_system_status(self, status_result: Dict[str, Any]) -> None:
         """Display system status in a user-friendly format"""
         self._print_subheader("System Status")

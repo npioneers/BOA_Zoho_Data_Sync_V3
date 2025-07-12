@@ -246,16 +246,27 @@ class JSON2DBSyncRunner:
             else:
                 result = populator.populate_all_tables()
             
-            return {
+            # Pass through all enhanced reporting data from the populator
+            enhanced_result = {
                 "success": result.get("success", False),
                 "operation": "populate_tables",
                 "db_path": target_db,
                 "json_dir": target_json,
                 "cutoff_days": cutoff_days,
-                "statistics": result.get("statistics", {}),
-                "errors": result.get("errors", []),
                 "completed_at": datetime.now().isoformat()
             }
+            
+            # Include all enhanced reporting fields
+            for key in ["session_info", "table_statistics", "total_records", 
+                       "total_tables", "total_json_files", "stats", "table_results"]:
+                if key in result:
+                    enhanced_result[key] = result[key]
+            
+            # Keep legacy statistics field for backward compatibility
+            enhanced_result["statistics"] = result.get("stats", result.get("statistics", {}))
+            enhanced_result["errors"] = result.get("errors", [])
+            
+            return enhanced_result
             
         except Exception as e:
             self.logger.error(f"Table population failed: {e}")
