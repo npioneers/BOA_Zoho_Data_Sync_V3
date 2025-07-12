@@ -732,9 +732,14 @@ class JSONDataPopulator:
                 # Fallback: try to get from current directory in case it's sync_sessions
                 timestamp_dirs = self.config.get_session_json_directories(str(self.json_dir))
         
-        # Collect all JSON files across timestamp directories
+        # Collect all JSON files across timestamp directories, excluding metadata files
         for timestamp_dir in timestamp_dirs:
             for json_file in timestamp_dir.glob("*.json"):
+                # Skip metadata files - they are not data arrays
+                if json_file.name.startswith("sync_metadata_"):
+                    self.logger.debug(f"Skipping metadata file: {json_file.name}")
+                    continue
+                    
                 module_name = json_file.stem
                 # Prefer newer timestamp files (first in list when sorted by name desc)
                 if module_name not in json_files:
