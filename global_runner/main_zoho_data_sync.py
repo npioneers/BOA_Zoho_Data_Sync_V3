@@ -261,7 +261,7 @@ class GlobalSyncWrapper:
         # Configuration
         config_info = status_result.get("configuration", {})
         print(f"\nConfiguration:")
-        print(f"  Default cutoff: {config_info.get('cutoff_days', 'N/A')} days")
+        print(f"  API Sync: Uses intelligent timestamp detection")
         print(f"  Freshness threshold: {config_info.get('freshness_threshold', 'N/A')} days")
         print(f"  Logging: {'Enabled' if config_info.get('logging_enabled', False) else 'Disabled'}")
     
@@ -293,7 +293,7 @@ class GlobalSyncWrapper:
         print()
         print("Configuration:")
         print(f"Database: {self.config.get_database_path()}")
-        print(f"Default cutoff: {self.config.get('sync_pipeline.default_cutoff_days', 30)} days")
+        print(f"API Sync: Uses intelligent timestamp detection")
         print(f"Freshness threshold: {self.config.get('sync_pipeline.freshness_threshold_days', 1)} days")
         
         # Package paths
@@ -370,18 +370,8 @@ class GlobalSyncWrapper:
         """Handle full sync pipeline execution"""
         self._print_header("Run Full Sync Pipeline")
         
-        # Get cutoff days from user
-        default_cutoff = self.config.get('sync_pipeline.default_cutoff_days', 30)
-        cutoff_input = self._get_user_input(f"Enter cutoff days (default: {default_cutoff})")
-        
-        try:
-            cutoff_days = int(cutoff_input) if cutoff_input else default_cutoff
-        except ValueError:
-            cutoff_days = default_cutoff
-            self._print_status(f"Invalid input, using default: {default_cutoff} days", "warning")
-        
         # Confirm before starting
-        print(f"\nThis will run the complete sync pipeline with {cutoff_days} day cutoff.")
+        print(f"\nThis will run the complete sync pipeline using intelligent timestamp detection.")
         print("Stages: API Sync → JSON2DB Sync → Freshness Check")
         
         confirm = self._get_user_input("Continue? (y/n)", ["y", "n", "Y", "N"])
@@ -389,9 +379,9 @@ class GlobalSyncWrapper:
             self._print_status("Full sync cancelled", "info")
             return
         
-        # Run sync
+        # Run sync (no cutoff_days parameter needed - using intelligent detection)
         self._print_status("Starting full sync pipeline...", "info")
-        sync_result = self.runner.run_full_sync(cutoff_days)
+        sync_result = self.runner.run_full_sync()
         
         # Display results
         print()  # Add spacing

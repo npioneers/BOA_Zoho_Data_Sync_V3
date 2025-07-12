@@ -127,32 +127,45 @@ class GlobalSyncRunner:
                 self._log(f"Package {package_name} is not enabled or configured", "warning")
                 return None
             
-            package_path = Path(package_config['path'])
+            package_path = Path(package_config['path']).resolve()
             runner_module = package_config['runner_module']
             
-            # Import the runner module
-            spec = importlib.util.spec_from_file_location(
-                runner_module, 
-                package_path / f"{runner_module}.py"
-            )
-            if not spec or not spec.loader:
-                self._log(f"Could not load {runner_module} from {package_path}", "error")
-                return None
+            # Add package directory to sys.path for proper local imports
+            package_path_str = str(package_path)
+            path_added = False
+            if package_path_str not in sys.path:
+                sys.path.insert(0, package_path_str)
+                path_added = True
             
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[runner_module] = module
-            spec.loader.exec_module(module)
+            try:
+                # Import the runner module
+                spec = importlib.util.spec_from_file_location(
+                    runner_module, 
+                    package_path / f"{runner_module}.py"
+                )
+                if not spec or not spec.loader:
+                    self._log(f"Could not load {runner_module} from {package_path}", "error")
+                    return None
+                
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[runner_module] = module
+                spec.loader.exec_module(module)
+                
+                # Get the runner class (assuming it follows naming convention)
+                runner_class_name = self._get_runner_class_name(package_name)
+                runner_class = getattr(module, runner_class_name, None)
+                
+                if not runner_class:
+                    self._log(f"Could not find runner class {runner_class_name} in {runner_module}", "error")
+                    return None
+                
+                self._log(f"Successfully imported {runner_class_name} from {package_name}")
+                return runner_class
             
-            # Get the runner class (assuming it follows naming convention)
-            runner_class_name = self._get_runner_class_name(package_name)
-            runner_class = getattr(module, runner_class_name, None)
-            
-            if not runner_class:
-                self._log(f"Could not find runner class {runner_class_name} in {runner_module}", "error")
-                return None
-            
-            self._log(f"Successfully imported {runner_class_name} from {package_name}")
-            return runner_class
+            finally:
+                # Clean up sys.path if we added it
+                if path_added and package_path_str in sys.path:
+                    sys.path.remove(package_path_str)
             
         except Exception as e:
             self._log(f"Error importing {package_name} runner: {str(e)}", "error")
@@ -446,7 +459,7 @@ class GlobalSyncRunner:
         Run complete sync pipeline: api_sync -> json2db_sync -> freshness check.
         
         Args:
-            cutoff_days: Number of days to look back for data (None for default)
+            cutoff_days: Number of days to look back for data (None for intelligent detection)
             
         Returns:
             Dictionary with sync results from all stages
@@ -454,12 +467,11 @@ class GlobalSyncRunner:
         start_time = datetime.now()
         cutoff_days = cutoff_days or self.config.get('sync_pipeline.default_cutoff_days', 30)
         
-        self._log(f"Starting full sync pipeline with {cutoff_days} day cutoff...")
+        self._log(f"Starting full sync pipeline using intelligent detection...")
         
         results = {
             "success": False,
             "start_time": start_time.isoformat(),
-            "cutoff_days": cutoff_days,
             "stages_completed": [],
             "stages_failed": [],
             "api_sync_result": None,
@@ -476,14 +488,10 @@ class GlobalSyncRunner:
                 try:
                     # Define the API sync execution function
                     def _execute_api_sync():
-                        # Run API sync with cutoff days parameter
-                        # Convert cutoff_days to since_timestamp for API sync
-                        from datetime import timedelta
-                        since_date = start_time - timedelta(days=cutoff_days)
-                        since_timestamp = since_date.isoformat()
-                        
+                        # Use API sync's intelligent timestamp detection instead of forcing global cutoff
+                        # This allows API sync to determine optimal timestamp based on database state
                         return api_runner.fetch_all_modules(
-                            since_timestamp=since_timestamp,
+                            since_timestamp=None,  # Let API sync determine optimal timestamp
                             full_sync=False
                         )
                     
@@ -531,18 +539,11 @@ class GlobalSyncRunner:
             json2db_runner = self._get_json2db_sync_runner()
             if json2db_runner:
                 try:
-                    # Get the API sync output directory for JSON2DB to process
-                    api_output_dir = None
-                    if results.get("api_sync_result") and results["api_sync_result"].get("output_dir"):
-                        api_output_dir = results["api_sync_result"]["output_dir"]
-                    
                     # Define the JSON2DB sync execution function
                     def _execute_json2db_sync():
-                        return json2db_runner.full_sync_workflow(
-                            cutoff_days=cutoff_days,
-                            json_dir=api_output_dir,
-                            skip_table_creation=False
-                        )
+                        # Let JSON2DB sync handle everything with its own defaults
+                        # This will use session-based data, 30-day cutoff, and duplicate prevention
+                        return json2db_runner.populate_tables()
                     
                     # Execute JSON2DB sync in its own directory
                     json2db_result = self._execute_in_package_directory('json2db_sync', _execute_json2db_sync)
@@ -551,12 +552,8 @@ class GlobalSyncRunner:
                     if json2db_result.get("success", False):
                         results["stages_completed"].append("json2db_sync")
                         # Extract useful metrics
-                        tables_processed = len(json2db_result.get("table_results", {}))
-                        total_records = sum(
-                            table_data.get("records_inserted", 0) + table_data.get("records_updated", 0)
-                            for table_data in json2db_result.get("table_results", {}).values()
-                            if isinstance(table_data, dict)
-                        )
+                        tables_processed = json2db_result.get("tables_processed", 0)
+                        total_records = json2db_result.get("total_records_processed", 0)
                         self._log(f"JSON2DB sync completed successfully - {tables_processed} tables, {total_records} records")
                     else:
                         results["stages_failed"].append("json2db_sync")
