@@ -309,66 +309,91 @@ class ApiSyncRunner:
             if module_name in ['invoices', 'bills', 'salesorders', 'purchaseorders', 'creditnotes']:
                 # These modules have line items to fetch
                 logger.info(f"Fetching {module_name} with line items...")
-                result = self.api_client.get_data_for_module_with_line_items(
-                    module_name, 
-                    since_timestamp=fetch_since
-                )
                 
-                # Save header records
-                if 'headers' in result and result['headers']:
-                    raw_data_handler.save_raw_json(
-                        result['headers'], 
+                try:
+                    result = self.api_client.get_data_for_module_with_line_items(
+                        module_name, 
+                        since_timestamp=fetch_since
+                    )
+                    
+                    # Save to temporary directories during sync
+                    headers = result.get('headers', [])
+                    raw_data_handler.save_raw_json_temp(
+                        headers, 
                         module_name, 
                         run_timestamp, 
                         json_base_dir
                     )
-                    
-                # Save line items if present
-                if 'line_items' in result and result['line_items']:
-                    raw_data_handler.save_raw_json(
-                        result['line_items'], 
+                        
+                    line_items = result.get('line_items', [])
+                    raw_data_handler.save_raw_json_temp(
+                        line_items, 
                         f"{module_name}_line_items", 
                         run_timestamp, 
                         json_base_dir
                     )
                     
-                record_count = len(result.get('headers', []))
-                line_item_count = len(result.get('line_items', []))
-                
-                return {
-                    "success": True,
-                    "module": module_name,
-                    "record_count": record_count,
-                    "line_item_count": line_item_count,
-                    "timestamp": run_timestamp,
-                    "since": fetch_since,
-                    "output_dir": os.path.join(json_base_dir, run_timestamp)
-                }
+                    # ONLY finalize timestamp if entire sync succeeds
+                    finalized = raw_data_handler.finalize_sync_timestamp(run_timestamp, json_base_dir)
+                    if not finalized:
+                        logger.warning("Failed to finalize sync timestamp")
+                        
+                    record_count = len(headers)
+                    line_item_count = len(line_items)
+                    
+                    return {
+                        "success": True,
+                        "module": module_name,
+                        "record_count": record_count,
+                        "line_item_count": line_item_count,
+                        "timestamp": run_timestamp,
+                        "since": fetch_since,
+                        "output_dir": os.path.join(json_base_dir, run_timestamp),
+                        "finalized": finalized
+                    }
+                    
+                except Exception as e:
+                    # Clean up temporary directory on failure
+                    raw_data_handler.cleanup_failed_sync(run_timestamp, json_base_dir)
+                    raise e
                 
             else:
                 # Regular modules without line items
                 logger.info(f"Fetching {module_name}...")
-                records = self.api_client.get_data_for_module(
-                    module_name, 
-                    since_timestamp=fetch_since
-                )
                 
-                # Save the data
-                raw_data_handler.save_raw_json(
-                    records, 
-                    module_name, 
-                    run_timestamp, 
-                    json_base_dir
-                )
-                
-                return {
-                    "success": True,
-                    "module": module_name,
-                    "record_count": len(records),
-                    "timestamp": run_timestamp,
-                    "since": fetch_since,
-                    "output_dir": os.path.join(json_base_dir, run_timestamp)
-                }
+                try:
+                    records = self.api_client.get_data_for_module(
+                        module_name, 
+                        since_timestamp=fetch_since
+                    )
+                    
+                    # Save to temporary directory during sync
+                    raw_data_handler.save_raw_json_temp(
+                        records, 
+                        module_name, 
+                        run_timestamp, 
+                        json_base_dir
+                    )
+                    
+                    # ONLY finalize timestamp if entire sync succeeds
+                    finalized = raw_data_handler.finalize_sync_timestamp(run_timestamp, json_base_dir)
+                    if not finalized:
+                        logger.warning("Failed to finalize sync timestamp")
+                    
+                    return {
+                        "success": True,
+                        "module": module_name,
+                        "record_count": len(records),
+                        "timestamp": run_timestamp,
+                        "since": fetch_since,
+                        "output_dir": os.path.join(json_base_dir, run_timestamp),
+                        "finalized": finalized
+                    }
+                    
+                except Exception as e:
+                    # Clean up temporary directory on failure
+                    raw_data_handler.cleanup_failed_sync(run_timestamp, json_base_dir)
+                    raise e
                 
         except Exception as e:
             logger.error(f"Error fetching data for {module_name}: {str(e)}")

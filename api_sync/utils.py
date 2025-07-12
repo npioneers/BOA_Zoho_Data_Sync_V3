@@ -193,11 +193,12 @@ def get_latest_sync_timestamp(json_base_dir: str = None) -> Optional[str]:
         
         for item in json_path.iterdir():
             if item.is_dir():
-                # Skip test directories and far-future dates
+                # Skip test directories, temporary directories, and far-future dates
                 if (item.name.startswith('TEST_') or 
                     item.name.startswith('CONSOLIDATED_') or
-                    item.name.startswith('9999-')):
-                    logger.debug(f"Skipping test/special directory: {item.name}")
+                    item.name.startswith('9999-') or
+                    item.name.endswith('.tmp')):
+                    logger.debug(f"Skipping test/special/temporary directory: {item.name}")
                     continue
                 
                 match = timestamp_pattern.search(item.name)
